@@ -7,7 +7,7 @@ on:
 
 jobs:
   release:
-    runs-on: macos-14 # Uses Apple Silicon runner
+    runs-on: macos-15 # Upgraded to use Xcode 16+ compatibility to fix format error 90
     permissions:
       contents: write # Grants GitHub permission to create a release and upload files
     
@@ -18,7 +18,6 @@ jobs:
       - name: Extract Version String
         id: get_version
         run: |
-          # Cleans 'v1.0.0' down to just '1.0.0'
           TAG_NAME="${{ github.ref_name }}"
           VERSION="${TAG_NAME#v}"
           echo "VERSION=$VERSION" >> $GITHUB_ENV
@@ -35,43 +34,39 @@ jobs:
             CODE_SIGNING_REQUIRED=NO \
             CODE_SIGN_IDENTITY=""
 
-      - name: Export, Clean, and Dynamic Rename
+      - name: Export and Build Raw Package (.pkg)
         run: |
-          # Create deployment folder
+          # Extract the compiled .app file from the Xcode structure
           mkdir -p $RUNNER_TEMP/ExportedApp
-          
-          # Copy out the compiled .app file from the Xcode structure
           cp -R $RUNNER_TEMP/SMC_breach.xcarchive/Products/Applications/SMC_breach.app $RUNNER_TEMP/ExportedApp/
           
-          # Strip out any local machine ad-hoc signatures to prevent immediate crashes on other Macs
+          # Strip out any local machine ad-hoc signatures to prevent crashes on other Macs
           codesign --remove-signature "$RUNNER_TEMP/ExportedApp/SMC_breach.app" || true
           
-          # Rename the .app file safely to include the version string
-          mv "$RUNNER_TEMP/ExportedApp/SMC_breach.app" "$RUNNER_TEMP/ExportedApp/SMC_breach-${{ env.VERSION }}.app"
-          
-          # Package the renamed .app bundle into a ZIP archive for GitHub distribution
-          cd $RUNNER_TEMP/ExportedApp
-          zip -r $GITHUB_WORKSPACE/SMC_breach-${{ env.VERSION }}-macOS.zip "SMC_breach-${{ env.VERSION }}.app"
+          # Build a clean installer package (.pkg) out of the .app file instead of a zip archive
+          pkgbuild --component "$RUNNER_TEMP/ExportedApp/SMC_breach.app" \
+            --install-location "/Applications" \
+            $GITHUB_WORKSPACE/SMC_breach-${{ env.VERSION }}.pkg
 
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v2
         with:
-          files: SMC_breach-${{ github.env.VERSION || steps.get_version.outputs.CLEAN_VERSION }}-macOS.zip
+          files: SMC_breach-${{ github.env.VERSION || steps.get_version.outputs.CLEAN_VERSION }}.pkg
           body: |
-            ## 🚀 SMC_breach Release (${{ github.ref_name }})
+            ## 🚀 SMC_breach Installer Release (${{ github.ref_name }})
             
             ### ⚠️ macOS Security Installation Note
-            Because this application is built for the community without an Apple Developer Account, macOS Gatekeeper will protectively block it on its first launch.
+            Because this application is built for the community without a paid Apple Developer Account, macOS Gatekeeper will protectively block the installer package on its first launch.
             
             **To run this app on your Mac safely:**
-            1. Download and extract **SMC_breach-${{ env.VERSION }}-macOS.zip**.
-            2. Move the `SMC_breach-${{ env.VERSION }}.app` bundle into your local `/Applications` folder.
-            3. Open your **Terminal** app and paste this exact command to clear the download quarantine flag:
+            1. Download the single **SMC_breach-${{ env.VERSION }}.pkg** file below.
+            2. Open your **Terminal** app and paste this exact command to clear the download quarantine flag before launching:
                ```bash
-               xattr -cr "/Applications/SMC_breach-\${{ env.VERSION }}.app"
+               xattr -cr ~/Downloads/SMC_breach-\${{ env.VERSION }}.pkg
                ```
-            4. Launch the app normally.
+            3. Double-click the `.pkg` file to install `SMC_breach` smoothly into your Applications folder.
             
-            *Alternatively (on modern macOS versions): Right-click (or Control-click) the app icon, choose **Open**, and select **Open Anyway** via your Mac's System Settings > Privacy & Security menu.*
+            *Alternatively (on modern macOS versions): Right-click (or Control-click) the pkg file, choose **Open**, and select **Open Anyway** via your Mac's System Settings > Privacy & Security menu.*
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
