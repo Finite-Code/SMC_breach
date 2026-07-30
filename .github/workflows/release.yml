@@ -1,0 +1,77 @@
+name: Release Unsigned macOS App
+
+on:
+  push:
+    tags:
+      - 'v*' # Triggers the build automatically whenever I push a tag like v1.0.0
+
+jobs:
+  release:
+    runs-on: macos-14 # Uses Apple Silicon runner
+    permissions:
+      contents: write # Grants GitHub permission to create a release and upload files
+    
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+
+      - name: Extract Version String
+        id: get_version
+        run: |
+          # Cleans 'v1.0.0' down to just '1.0.0'
+          TAG_NAME="${{ github.ref_name }}"
+          VERSION="${TAG_NAME#v}"
+          echo "VERSION=$VERSION" >> $GITHUB_ENV
+          echo "CLEAN_VERSION=$VERSION" >> $GITHUB_OUTPUT
+
+      - name: Build App Archive
+        run: |
+          xcodebuild archive \
+            -project "SMC_breach.xcodeproj" \
+            -scheme "SMC_breach" \
+            -configuration Release \
+            -archivePath $RUNNER_TEMP/SMC_breach.xcarchive \
+            CODE_SIGNING_ALLOWED=NO \
+            CODE_SIGNING_REQUIRED=NO \
+            CODE_SIGN_IDENTITY=""
+
+      - name: Export, Clean, and Dynamic Rename
+        run: |
+          # Create deployment folder
+          mkdir -p $RUNNER_TEMP/ExportedApp
+          
+          # Copy out the compiled .app file from the Xcode structure
+          cp -R $RUNNER_TEMP/SMC_breach.xcarchive/Products/Applications/SMC_breach.app $RUNNER_TEMP/ExportedApp/
+          
+          # Strip out any local machine ad-hoc signatures to prevent immediate crashes on other Macs
+          codesign --remove-signature "$RUNNER_TEMP/ExportedApp/SMC_breach.app" || true
+          
+          # Rename the .app file safely to include the version string
+          mv "$RUNNER_TEMP/ExportedApp/SMC_breach.app" "$RUNNER_TEMP/ExportedApp/SMC_breach-${{ env.VERSION }}.app"
+          
+          # Package the renamed .app bundle into a ZIP archive for GitHub distribution
+          cd $RUNNER_TEMP/ExportedApp
+          zip -r $GITHUB_WORKSPACE/SMC_breach-${{ env.VERSION }}-macOS.zip "SMC_breach-${{ env.VERSION }}.app"
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: SMC_breach-${{ github.env.VERSION || steps.get_version.outputs.CLEAN_VERSION }}-macOS.zip
+          body: |
+            ## 🚀 SMC_breach Release (${{ github.ref_name }})
+            
+            ### ⚠️ macOS Security Installation Note
+            Because this application is built for the community without an Apple Developer Account, macOS Gatekeeper will protectively block it on its first launch.
+            
+            **To run this app on your Mac safely:**
+            1. Download and extract **SMC_breach-${{ env.VERSION }}-macOS.zip**.
+            2. Move the `SMC_breach-${{ env.VERSION }}.app` bundle into your local `/Applications` folder.
+            3. Open your **Terminal** app and paste this exact command to clear the download quarantine flag:
+               ```bash
+               xattr -cr "/Applications/SMC_breach-\${{ env.VERSION }}.app"
+               ```
+            4. Launch the app normally.
+            
+            *Alternatively (on modern macOS versions): Right-click (or Control-click) the app icon, choose **Open**, and select **Open Anyway** via your Mac's System Settings > Privacy & Security menu.*
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
