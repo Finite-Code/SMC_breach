@@ -12,9 +12,13 @@ struct SMC_breach: App {
 
     var body: some Scene {
         MenuBarExtra {
-            PowerMonitorView()
-                .environmentObject(powerMonitor)
-                .onAppear { powerMonitor.start() }
+            if #available(macOS 26.0, *) {
+                PowerMonitorView()
+                    .environmentObject(powerMonitor)
+                    .onAppear { powerMonitor.start() }
+            } else {
+                // Fallback on earlier versions
+            }
         } label: {
             HStack(spacing: 4) {
                 Image(systemName: powerMonitor.menuBarIcon)
@@ -31,11 +35,12 @@ struct SMC_breach: App {
 
 // MARK: - Root View
 
-@available(macOS 14.0, *)
+@available(macOS 26.0, *)
 struct PowerMonitorView: View {
     @EnvironmentObject var powerMonitor: PowerMonitor
     @State private var appeared = false
-
+    
+    @available(macOS 26.0, *)
     var body: some View {
         VStack(spacing: 24) {
             topSection
@@ -45,20 +50,10 @@ struct PowerMonitorView: View {
         }
         .padding(20)
         .frame(width: 340)
-        // Global glass background matching the image
-        .background(
-            RoundedRectangle(cornerRadius: 24, style: .continuous)
-                .fill(.ultraThinMaterial)
-        )
-        .background(
-            RoundedRectangle(cornerRadius: 24, style: .continuous)
-                .fill(Color.black.opacity(0.2)) // Slight darkening tint
-        )
-        .overlay(
-            RoundedRectangle(cornerRadius: 24, style: .continuous)
-                .stroke(Color.white.opacity(0.15), lineWidth: 1)
-        )
-        // Force dark mode to ensure the text and materials match the reference image
+        // 1. Replaced material background and stroke overlay with native Liquid Glass
+        .glassEffect(.regular, in: .rect(cornerRadius: 24, style: .continuous))
+        // 2. Used semantic foreground styles inside sections (e.g., .primary, .secondary)
+        // to automatically adapt contrast and blending over the glass layer.
         .environment(\.colorScheme, .dark)
         .opacity(appeared ? 1 : 0)
         .scaleEffect(appeared ? 1 : 0.97)
@@ -68,9 +63,10 @@ struct PowerMonitorView: View {
             }
         }
     }
-
+    
     // MARK: Header — Status & Bar Chart
 
+    @available(macOS 26.0, *)
     private var topSection: some View {
         HStack(alignment: .top) {
             VStack(alignment: .leading, spacing: 0) {
@@ -117,14 +113,17 @@ struct PowerMonitorView: View {
             }
         }
         .padding(16)
-        .background(
-            RoundedRectangle(cornerRadius: 16, style: .continuous)
-                .fill(Color.white.opacity(0.15))
-        )
-        .overlay(
-            RoundedRectangle(cornerRadius: 16, style: .continuous)
-                .stroke(Color.white.opacity(0.2), lineWidth: 1)
-        )
+        .glassEffect(.regular, in: .rect(cornerRadius: 24, style: .continuous))
+        // 2. Used semantic foreground styles inside sections (e.g., .primary, .secondary)
+        // to automatically adapt contrast and blending over the glass layer.
+        .environment(\.colorScheme, .dark)
+        .opacity(appeared ? 1 : 0)
+        .scaleEffect(appeared ? 1 : 0.97)
+        .onAppear {
+            withAnimation(.spring(response: 0.55, dampingFraction: 0.85)) {
+                appeared = true
+            }
+        }
     }
 
     // MARK: 3-Column Metrics Row
@@ -186,10 +185,7 @@ struct PowerMonitorView: View {
             .animation(.easeOut(duration: 0.35), value: powerMonitor.history)
         }
         .padding(16)
-        .background(
-            RoundedRectangle(cornerRadius: 16, style: .continuous)
-                .fill(Color.white.opacity(0.95)) // Solid white frosted look from the image
-        )
+        .glassEffect(.clear, in: .rect(cornerRadius: 16, style: .continuous))
     }
 
     // MARK: Bottom Actions
