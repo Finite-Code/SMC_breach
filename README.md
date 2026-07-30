@@ -6,7 +6,7 @@ A sleek macOS menu bar utility that dives into hidden system APIs to broadcast l
 
 **[🚀 DOWNLOAD THE LATEST DEMO RELEASE HERE](https://www.google.com/search?q=https://github.com/your-username/SMC_breach/releases)**
 
-## Quick start
+## 🚀 Quick start
 
 How to go from 0 to live internal data states in under 10 seconds:
 
@@ -14,7 +14,7 @@ How to go from 0 to live internal data states in under 10 seconds:
 2. **IMPORTANT:** Follow along the install guide in Releases.
 3. Open it up! It lives quietly up top as a menu bar extra (no annoying Dock clutter).
 
-## Features
+## ⚙️ Features
 
 The Demo UI is fully plugged in, pulling metrics directly from your machine.
 
@@ -24,7 +24,7 @@ The Demo UI is fully plugged in, pulling metrics directly from your machine.
 * **Menu Bar Native:** A pure `.menuBarExtra` SwiftUI app. It's completely out of your way until you need it.
 * **Liquid Glass:** Beautifully grouped layout utilizing SF Symbols to get the best of UX and a delight to the eye.
 
-## How to run it locally
+## ⬇️ How to run it locally
 
 Wanna breach the SMC yourself? It's pretty straightforward, just make sure you have Xcode installed.
 
@@ -39,7 +39,7 @@ cd SMC_breach
 
 Just open the project folder in Xcode, let the indexing finish, and hit `Cmd + R` to build and run. (Targets Apple Silicon/macOS architecture).
 
-## How it works
+## ❓ How it works
 
 macOS doesn't natively broadcast a lot of this power information to standard applications, so you have to go through hidden system APIs. This is exactly why such Power Management apps are never on the App Store!
 
@@ -47,7 +47,7 @@ Under the hood, the app leverages IOKit (via Objective-C bridging) to dig into t
 
 To make this robust, everything is fetched using C functions and safely dispatched back to the main queue for SwiftUI to update the `@Published` properties. I also heavily relied on `defer { IOObjectRelease(...) }` to ensure we don't leak memory from CoreFoundation objects while keeping the live stats refreshing every second.
 
-## Credits / Acknowledgements
+## 🤝 Credits / Acknowledgements
 
 What's up folks? This is Atharva (FiniteCode), and I couldn't have pulled off this low-level access without:
 
