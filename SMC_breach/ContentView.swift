@@ -3,6 +3,7 @@ import Foundation
 import Combine
 import IOKit
 
+@available(macOS 13.0, *)
 @main
 struct SMC_breach: App {
     @StateObject private var powerMonitor = PowerMonitor()
