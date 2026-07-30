@@ -37,15 +37,29 @@ struct PowerMonitorView: View {
     @State private var appeared = false
 
     var body: some View {
-        VStack(spacing: 16) {
-            headerSection
-            statusPills
-            metricsRow
+        VStack(spacing: 24) {
+            topSection
+            metricsSection
             sparklineSection
+            bottomActionSection
         }
-        .padding(18)
-        .frame(width: 300)
-        .background(backgroundGlow)
+        .padding(20)
+        .frame(width: 340)
+        // Global glass background matching the image
+        .background(
+            RoundedRectangle(cornerRadius: 24, style: .continuous)
+                .fill(.ultraThinMaterial)
+        )
+        .background(
+            RoundedRectangle(cornerRadius: 24, style: .continuous)
+                .fill(Color.black.opacity(0.2)) // Slight darkening tint
+        )
+        .overlay(
+            RoundedRectangle(cornerRadius: 24, style: .continuous)
+                .stroke(Color.white.opacity(0.15), lineWidth: 1)
+        )
+        // Force dark mode to ensure the text and materials match the reference image
+        .environment(\.colorScheme, .dark)
         .opacity(appeared ? 1 : 0)
         .scaleEffect(appeared ? 1 : 0.97)
         .onAppear {
@@ -55,176 +69,104 @@ struct PowerMonitorView: View {
         }
     }
 
-    // MARK: Header — animated ring gauge
+    // MARK: Header — Status & Bar Chart
 
-    private var headerSection: some View {
-        HStack(spacing: 16) {
-            ZStack {
-                Circle()
-                    .stroke(Color.secondary.opacity(0.15), lineWidth: 7)
+    private var topSection: some View {
+        HStack(alignment: .top) {
+            VStack(alignment: .leading, spacing: 0) {
+                Text(powerMonitor.isCharging ? "Charging" : (powerMonitor.isPluggedIn ? "Charging on hold" : "On Battery"))
+                    .font(.system(size: 18, weight: .bold, design: .rounded))
+                    .foregroundColor(.white)
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.8)
 
-                RingShape(progress: min(max(Double(powerMonitor.capacity) / 100.0, 0), 1))
-                    .stroke(ringGradient, style: StrokeStyle(lineWidth: 7, lineCap: .round))
-                    .animation(.spring(response: 0.7, dampingFraction: 0.85), value: powerMonitor.capacity)
-                    .shadow(color: ringGlowColor.opacity(0.5), radius: 6)
+                Text("\(powerMonitor.capacity)%")
+                    .font(.system(size: 48, weight: .heavy, design: .rounded))
+                    .foregroundColor(.white)
+                    .monospacedDigit()
+                    .contentTransition(.numericText())
+            }
 
-                VStack(spacing: 1) {
-                    if powerMonitor.isCharging {
-                        Image(systemName: "bolt.fill")
-                            .font(.system(size: 10, weight: .bold))
-                            .foregroundStyle(.yellow)
-                            .symbolEffect(.pulse, options: .repeating, isActive: true)
+            Spacer()
+
+            // Mock Bar Chart matching the image's layout
+            VStack(alignment: .trailing, spacing: 6) {
+                HStack(alignment: .bottom, spacing: 4) {
+                    // Simulating historic bar data
+                    ForEach(0..<12, id: \.self) { i in
+                        Capsule()
+                            .fill(i > 7 ? Color.green : Color.yellow)
+                            .frame(width: 4, height: CGFloat.random(in: 10...35))
                     }
-                    Text("\(powerMonitor.capacity)")
-                        .font(.system(size: 24, weight: .bold, design: .rounded))
-                        .monospacedDigit()
-                        .contentTransition(.numericText())
-                    Text("percent")
-                        .font(.system(size: 9, weight: .medium, design: .rounded))
-                        .foregroundStyle(.secondary)
-                        .textCase(.uppercase)
                 }
+                .frame(height: 35)
+
+                // Thin divider under the bars, matching the reference image
+                Rectangle()
+                    .fill(Color.white.opacity(0.5))
+                    .frame(width: 90, height: 1)
+
+                HStack {
+                    Text("1hr")
+                    Spacer()
+                    Text("now")
+                }
+                .font(.system(size: 10, weight: .bold))
+                .foregroundColor(.white.opacity(0.6))
+                .frame(width: 90)
             }
-            .frame(width: 74, height: 74)
-            .animation(.easeInOut(duration: 0.3), value: powerMonitor.isCharging)
-
-            VStack(alignment: .leading, spacing: 3) {
-                Text("Battery")
-                    .font(.system(.title3, design: .rounded).weight(.semibold))
-
-                Text(statusText)
-                    .font(.system(.subheadline, design: .rounded))
-                    .foregroundStyle(.secondary)
-                    .contentTransition(.opacity)
-                    .animation(.easeInOut(duration: 0.25), value: statusText)
-            }
-
-            Spacer(minLength: 0)
         }
-    }
-
-    private var statusText: String {
-        if powerMonitor.isCharging {
-            return "Charging • \(powerMonitor.adapterWatts)W"
-        } else if powerMonitor.isPluggedIn {
-            return "Plugged In"
-        } else {
-            return "On Battery"
-        }
-    }
-
-    private var ringGradient: AngularGradient {
-        let colors: [Color] = powerMonitor.isCharging
-            ? [.green, .mint, .green]
-            : [.blue, .cyan, .blue]
-        return AngularGradient(colors: colors, center: .center, startAngle: .degrees(-90), endAngle: .degrees(270))
-    }
-
-    private var ringGlowColor: Color {
-        powerMonitor.isCharging ? .green : .blue
-    }
-
-    // MARK: Status pills
-
-    private var statusPills: some View {
-        HStack(spacing: 8) {
-            statusPill(
-                icon: powerMonitor.isPluggedIn ? "powerplug.fill" : "powerplug",
-                text: powerMonitor.isPluggedIn ? "Plugged In" : "Unplugged",
-                tint: powerMonitor.isPluggedIn ? .green : .secondary
-            )
-            statusPill(
-                icon: powerMonitor.isCharging ? "bolt.fill" : "bolt.slash",
-                text: powerMonitor.isCharging ? "Charging" : "Idle",
-                tint: powerMonitor.isCharging ? .yellow : .secondary
-            )
-            Spacer(minLength: 0)
-        }
-    }
-
-    private func statusPill(icon: String, text: String, tint: Color) -> some View {
-        HStack(spacing: 5) {
-            Image(systemName: icon)
-                .font(.caption)
-                .foregroundStyle(tint)
-                .contentTransition(.symbolEffect(.replace))
-            Text(text)
-                .font(.system(.caption, design: .rounded).weight(.medium))
-                .contentTransition(.opacity)
-        }
-        .padding(.horizontal, 10)
-        .padding(.vertical, 6)
+        .padding(16)
         .background(
-            Capsule()
-                .fill(tint.opacity(0.14))
+            RoundedRectangle(cornerRadius: 16, style: .continuous)
+                .fill(Color.white.opacity(0.15))
         )
         .overlay(
-            Capsule()
-                .stroke(tint.opacity(0.28), lineWidth: 1)
+            RoundedRectangle(cornerRadius: 16, style: .continuous)
+                .stroke(Color.white.opacity(0.2), lineWidth: 1)
         )
-        .animation(.easeInOut(duration: 0.25), value: text)
     }
 
-    // MARK: Metric cards
+    // MARK: 3-Column Metrics Row
 
-    private var metricsRow: some View {
-        HStack(spacing: 10) {
-            metricCard(
-                title: "Battery",
-                value: String(format: "%+.1fW", powerMonitor.batteryPower),
-                icon: powerMonitor.batteryPower >= 0 ? "bolt.fill" : "bolt.slash.fill",
-                tint: powerMonitor.batteryPower >= 0 ? .green : .orange
-            )
-            metricCard(
-                title: "Adapter",
-                value: "\(powerMonitor.adapterWatts)W",
-                icon: "powerplug.fill",
-                tint: .blue
-            )
-            metricCard(
-                title: "System",
-                value: String(format: "%.1fW", powerMonitor.systemLoad),
-                icon: "cpu",
-                tint: .purple
-            )
+    private var metricsSection: some View {
+        HStack {
+            metricColumn(title: "Battery", value: String(format: "%.0fW", powerMonitor.batteryPower))
+            Spacer()
+            metricColumn(title: "Power Adapter", value: String(format: "%.1f W", Double(powerMonitor.adapterWatts)))
+            Spacer()
+            metricColumn(title: "System Total", value: String(format: "%.1f W", powerMonitor.systemLoad))
         }
+        .padding(.horizontal, 8)
     }
 
-    private func metricCard(title: String, value: String, icon: String, tint: Color) -> some View {
-        VStack(alignment: .leading, spacing: 6) {
-            Image(systemName: icon)
-                .font(.caption)
-                .foregroundStyle(tint)
-
+    private func metricColumn(title: String, value: String) -> some View {
+        VStack(alignment: .center, spacing: 2) {
+            Text(title)
+                .font(.system(size: 13, weight: .medium, design: .rounded))
+                .foregroundColor(.white.opacity(0.8))
             Text(value)
-                .font(.system(.callout, design: .rounded).weight(.semibold))
+                .font(.system(size: 24, weight: .bold, design: .rounded))
+                .foregroundColor(.white)
                 .monospacedDigit()
                 .contentTransition(.numericText())
                 .lineLimit(1)
-                .minimumScaleFactor(0.8)
-
-            Text(title)
-                .font(.system(.caption2, design: .rounded))
-                .foregroundStyle(.secondary)
+                .minimumScaleFactor(0.7)
         }
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .padding(12)
-        .glassCard(cornerRadius: 14)
-        .animation(.spring(response: 0.4, dampingFraction: 0.85), value: value)
     }
 
-    // MARK: Sparkline
+    // MARK: Sparkline Card
 
     private var sparklineSection: some View {
         VStack(alignment: .leading, spacing: 8) {
             HStack {
                 Text("Power Trend")
-                    .font(.system(.caption, design: .rounded).weight(.semibold))
-                    .foregroundStyle(.secondary)
+                    .font(.system(size: 12, weight: .bold, design: .rounded))
+                    .foregroundColor(.gray)
                 Spacer()
                 Text(String(format: "%.1fW", powerMonitor.history.last ?? 0))
-                    .font(.system(.caption2, design: .rounded).weight(.medium))
-                    .foregroundStyle(.tertiary)
+                    .font(.system(size: 12, weight: .bold, design: .rounded))
+                    .foregroundColor(.gray)
                     .monospacedDigit()
             }
 
@@ -232,90 +174,81 @@ struct PowerMonitorView: View {
                 SparklineArea(points: powerMonitor.history)
                     .fill(
                         LinearGradient(
-                            colors: [Color.accentColor.opacity(0.35), Color.accentColor.opacity(0.02)],
+                            colors: [Color.blue.opacity(0.3), Color.clear],
                             startPoint: .top,
                             endPoint: .bottom
                         )
                     )
                 SparklinePath(points: powerMonitor.history)
-                    .stroke(Color.accentColor, style: StrokeStyle(lineWidth: 2, lineCap: .round, lineJoin: .round))
+                    .stroke(Color.blue, style: StrokeStyle(lineWidth: 2, lineCap: .round, lineJoin: .round))
             }
-            .frame(height: 42)
+            .frame(height: 40)
             .animation(.easeOut(duration: 0.35), value: powerMonitor.history)
         }
-        .padding(12)
-        .glassCard(cornerRadius: 14)
-    }
-
-    private var backgroundGlow: some View {
-        RadialGradient(
-            colors: [
-                (powerMonitor.isCharging ? Color.green : Color.blue).opacity(0.10),
-                .clear
-            ],
-            center: .topLeading,
-            startRadius: 0,
-            endRadius: 260
+        .padding(16)
+        .background(
+            RoundedRectangle(cornerRadius: 16, style: .continuous)
+                .fill(Color.white.opacity(0.95)) // Solid white frosted look from the image
         )
-        .animation(.easeInOut(duration: 0.4), value: powerMonitor.isCharging)
     }
-}
 
-// MARK: - Glass card style (Material-based; safe on any Xcode/macOS version)
+    // MARK: Bottom Actions
 
-struct GlassCardModifier: ViewModifier {
-    var cornerRadius: CGFloat = 16
+    private var bottomActionSection: some View {
+        HStack(spacing: 10) {
+            // Grouped segmented pill: "Charge to 100%" | "Charge Now"
+            HStack(spacing: 0) {
+                Button(action: { /* Charge to 100% Action */ }) {
+                    Text("Charge to 100%")
+                        .font(.system(size: 12, weight: .medium, design: .rounded))
+                        .padding(.horizontal, 14)
+                        .padding(.vertical, 8)
+                }
+                .buttonStyle(.plain)
 
-    func body(content: Content) -> some View {
-        content
-            .background(
-                RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
-                    .fill(.ultraThinMaterial)
-            )
-            .overlay(
-                RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
-                    .stroke(
-                        LinearGradient(
-                            colors: [Color.white.opacity(0.22), Color.white.opacity(0.04)],
-                            startPoint: .topLeading,
-                            endPoint: .bottomTrailing
-                        ),
-                        lineWidth: 1
-                    )
-            )
-            .shadow(color: .black.opacity(0.18), radius: 8, y: 4)
+                Rectangle()
+                    .fill(Color.white.opacity(0.25))
+                    .frame(width: 1, height: 16)
+
+                Button(action: { /* Charge Now Action */ }) {
+                    Text("Charge Now")
+                        .font(.system(size: 12, weight: .medium, design: .rounded))
+                        .padding(.horizontal, 14)
+                        .padding(.vertical, 8)
+                }
+                .buttonStyle(.plain)
+            }
+            .foregroundColor(.white)
+            .background(Capsule().fill(Color.white.opacity(0.08)))
+            .overlay(Capsule().stroke(Color.white.opacity(0.3), lineWidth: 1))
+
+            Spacer()
+
+            // Circular icon buttons matching the reference image's stroked circles
+            circleIconButton(systemName: "chevron.left.forwardslash.chevron.right") {
+                // Open Github action
+            }
+
+            circleIconButton(systemName: "power") {
+                NSApplication.shared.terminate(nil)
+            }
+        }
     }
-}
 
-extension View {
-    func glassCard(cornerRadius: CGFloat = 16) -> some View {
-        modifier(GlassCardModifier(cornerRadius: cornerRadius))
+    private func circleIconButton(systemName: String, action: @escaping () -> Void) -> some View {
+        Button(action: action) {
+            Image(systemName: systemName)
+                .font(.system(size: 14, weight: .medium))
+                .frame(width: 32, height: 32)
+        }
+        .buttonStyle(.plain)
+        .foregroundColor(.white)
+        .background(Circle().fill(Color.white.opacity(0.08)))
+        .overlay(Circle().stroke(Color.white.opacity(0.3), lineWidth: 1))
     }
 }
 
 // MARK: - Shapes
-
-struct RingShape: Shape {
-    var progress: Double
-
-    var animatableData: Double {
-        get { progress }
-        set { progress = newValue }
-    }
-
-    func path(in rect: CGRect) -> Path {
-        var path = Path()
-        let radius = min(rect.width, rect.height) / 2
-        path.addArc(
-            center: CGPoint(x: rect.midX, y: rect.midY),
-            radius: radius,
-            startAngle: .degrees(-90),
-            endAngle: .degrees(-90 + 360 * progress),
-            clockwise: false
-        )
-        return path
-    }
-}
 
 struct SparklinePath: Shape {
     var points: [Double]
@@ -366,7 +299,7 @@ struct SparklineArea: Shape {
     }
 }
 
-// MARK: - Power Monitor
+// MARK: - Power Monitor Logic
 
 class PowerMonitor: ObservableObject {
     @Published var isCharging: Bool = false
