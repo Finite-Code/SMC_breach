@@ -7,13 +7,18 @@ on:
 
 jobs:
   release:
-    runs-on: macos-15 # Upgraded to use Xcode 16+ compatibility to fix format error 90
+    runs-on: macos-15 # Required OS platform to support modern Xcode toolchains
     permissions:
       contents: write # Grants GitHub permission to create a release and upload files
     
     steps:
       - name: Checkout Code
         uses: actions/checkout@v4
+
+      - name: Select Xcode 16.3+ for Project Format 90
+        run: |
+          # Explicitly sets Xcode 16.3 to process objectVersion = 90 compatibility
+          sudo xcode-select -s "/Applications/Xcode_16.3.app"
 
       - name: Extract Version String
         id: get_version
@@ -40,10 +45,10 @@ jobs:
           mkdir -p $RUNNER_TEMP/ExportedApp
           cp -R $RUNNER_TEMP/SMC_breach.xcarchive/Products/Applications/SMC_breach.app $RUNNER_TEMP/ExportedApp/
           
-          # Strip out any local machine ad-hoc signatures to prevent crashes on other Macs
+          # Strip out any local machine ad-hoc signatures to prevent immediate crashes on other Macs
           codesign --remove-signature "$RUNNER_TEMP/ExportedApp/SMC_breach.app" || true
           
-          # Build a clean installer package (.pkg) out of the .app file instead of a zip archive
+          # Build a clean installer package (.pkg) instead of a zip file archive
           pkgbuild --component "$RUNNER_TEMP/ExportedApp/SMC_breach.app" \
             --install-location "/Applications" \
             $GITHUB_WORKSPACE/SMC_breach-${{ env.VERSION }}.pkg
@@ -66,7 +71,6 @@ jobs:
                ```
             3. Double-click the `.pkg` file to install `SMC_breach` smoothly into your Applications folder.
             
-            *Alternatively (on modern macOS versions): Right-click (or Control-click) the pkg file, choose **Open**, and select **Open Anyway** via your Mac's System Settings > Privacy & Security menu.*
+            *Alternatively: Right-click (or Control-click) the pkg file, choose **Open**, and select **Open Anyway** via your Mac's System Settings > Privacy & Security menu.*
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-
