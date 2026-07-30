@@ -40,6 +40,44 @@ struct PowerMonitorView: View {
     @EnvironmentObject var powerMonitor: PowerMonitor
     @State private var appeared = false
     
+    // Introduce Rolling Text:
+    struct AppleRollingText: View {
+        let text: String
+        var font: Font = .system(size: 48, weight: .heavy, design: .rounded)
+        var foregroundColor: Color = .white
+        var lineLimit: Int? = nil
+        var minimumScaleFactor: CGFloat = 1.0
+        
+        // Tracks the current value to compare if the number is going up or down
+        @State private var previousValue: Double = 0.0
+        
+        // Derived state to determine if the roll should invert
+        private var countsDown: Bool {
+            let cleanCurrent = Double(text.replacingOccurrences(of: "[^0-9.]", with: "", options: .regularExpression)) ?? 0
+            return cleanCurrent < previousValue
+        }
+        
+        var body: some View {
+            Text(text)
+                .font(font)
+                .foregroundColor(foregroundColor)
+                .monospacedDigit()
+                // Apple Quality Lock: flips the scroll wheel physics when counting down!
+                .contentTransition(.numericText(countsDown: countsDown))
+                .lineLimit(lineLimit)
+                .minimumScaleFactor(minimumScaleFactor)
+                .fixedSize(horizontal: false, vertical: true)
+                .clipped()
+                .animation(.snappy(duration: 0.35, extraBounce: 0.1), value: text)
+                // Silently updates our tracker background reference frame
+                .onChange(of: text) { _, newValue in
+                    let cleanNew = Double(newValue.replacingOccurrences(of: "[^0-9.]", with: "", options: .regularExpression)) ?? 0
+                    previousValue = cleanNew
+                }
+        }
+    }
+
+    
     @available(macOS 26.0, *)
     var body: some View {
         VStack(spacing: 24) {
@@ -76,11 +114,7 @@ struct PowerMonitorView: View {
                     .lineLimit(1)
                     .minimumScaleFactor(0.8)
 
-                Text("\(powerMonitor.capacity)%")
-                    .font(.system(size: 48, weight: .heavy, design: .rounded))
-                    .foregroundColor(.white)
-                    .monospacedDigit()
-                    .contentTransition(.numericText())
+                AppleRollingText(text: "\(powerMonitor.capacity)%")
             }
 
             Spacer()
@@ -144,13 +178,13 @@ struct PowerMonitorView: View {
             Text(title)
                 .font(.system(size: 13, weight: .medium, design: .rounded))
                 .foregroundColor(.white.opacity(0.8))
-            Text(value)
-                .font(.system(size: 24, weight: .bold, design: .rounded))
-                .foregroundColor(.white)
-                .monospacedDigit()
-                .contentTransition(.numericText())
-                .lineLimit(1)
-                .minimumScaleFactor(0.7)
+            AppleRollingText(
+                text: value,
+                font: .system(size: 24, weight: .bold, design: .rounded),
+                foregroundColor: .white,
+                lineLimit: 1,
+                minimumScaleFactor: 0.7
+            )
         }
     }
 
@@ -309,6 +343,15 @@ class PowerMonitor: ObservableObject {
     private let historyLimit = 40
     private var timer: Timer?
 
+    // Buffers for polling
+    private var batteryPowerBuffer: [Double] = []
+    private var adapterWattsBuffer: [Int] = []
+    private var systemLoadBuffer: [Double] = []
+    private var capacityBuffer: [Int] = []
+    private var isChargingBuffer: [Bool] = []
+    private var isPluggedInBuffer: [Bool] = []
+    private var pollCounter = 0
+
     var menuBarIcon: String {
         if isCharging { return "battery.100.bolt" }
         switch capacity {
@@ -322,13 +365,13 @@ class PowerMonitor: ObservableObject {
 
     func start() {
         guard timer == nil else { return }
-        timer = Timer.scheduledTimer(withTimeInterval: 1.0, repeats: true) { [weak self] _ in
-            self?.updateStats()
+        timer = Timer.scheduledTimer(withTimeInterval: 0.25, repeats: true) { [weak self] _ in
+            self?.pollAndBufferStats()
         }
-        updateStats()
+        pollAndBufferStats()
     }
 
-    private func updateStats() {
+    private func pollAndBufferStats() {
         let service = IOServiceGetMatchingService(kIOMainPortDefault, IOServiceMatching("AppleSmartBattery"))
         guard service != 0 else { return }
         defer { IOObjectRelease(service) }
@@ -339,40 +382,122 @@ class PowerMonitor: ObservableObject {
             return
         }
 
+        // Poll all values and store them in buffers
+        let isChargingVal = dict["IsCharging"] as? Bool ?? false
+        let isPluggedInVal = dict["ExternalConnected"] as? Bool ?? false
+        let capacityVal = (dict["CurrentCapacity"] as? NSNumber)?.intValue ?? 0
+        let rawAmps = (dict["InstantAmperage"] as? NSNumber)?.doubleValue ?? 0.0
+        let volts = (dict["Voltage"] as? NSNumber)?.doubleValue ?? 0.0
+        let calcPower = (rawAmps * volts) / 1_000_000.0
+        let batteryPowerVal: Double
+        if isChargingVal {
+            batteryPowerVal = abs(calcPower)
+        } else if rawAmps < 0 {
+            batteryPowerVal = -abs(calcPower)
+        } else {
+            batteryPowerVal = 0.0
+        }
+        let adapterWattsVal: Int
+        if let adapterDetails = dict["AdapterDetails"] as? [String: Any] {
+            adapterWattsVal = (adapterDetails["Watts"] as? NSNumber)?.intValue ?? 0
+        } else if let rawAdapterDetails = dict["AppleRawAdapterDetails"] as? [String: Any] {
+            adapterWattsVal = (rawAdapterDetails["Watts"] as? NSNumber)?.intValue ?? 0
+        } else {
+            adapterWattsVal = 0
+        }
+        var systemLoadVal: Double = 0.0
+        if let telemetry = dict["PowerTelemetryData"] as? [String: Any],
+           let sysLoad = (telemetry["SystemLoad"] as? NSNumber)?.doubleValue {
+            systemLoadVal = sysLoad / 1000.0
+        }
+
+        // Buffer
         DispatchQueue.main.async {
-            self.isCharging = dict["IsCharging"] as? Bool ?? false
-            self.isPluggedIn = dict["ExternalConnected"] as? Bool ?? false
-            self.capacity = (dict["CurrentCapacity"] as? NSNumber)?.intValue ?? 0
+            self.isChargingBuffer.append(isChargingVal)
+            self.isPluggedInBuffer.append(isPluggedInVal)
+            self.capacityBuffer.append(capacityVal)
+            self.batteryPowerBuffer.append(batteryPowerVal)
+            self.adapterWattsBuffer.append(adapterWattsVal)
+            self.systemLoadBuffer.append(systemLoadVal)
+            self.pollCounter += 1
 
-            let rawAmps = (dict["InstantAmperage"] as? NSNumber)?.doubleValue ?? 0.0
-            let volts = (dict["Voltage"] as? NSNumber)?.doubleValue ?? 0.0
-            let calcPower = (rawAmps * volts) / 1_000_000.0
+            if self.pollCounter >= 4 {
+                // Average buffers
+                let avgIsCharging = self.isChargingBuffer.filter { $0 }.count >= 2
+                let avgIsPluggedIn = self.isPluggedInBuffer.filter { $0 }.count >= 2
+                let avgCapacity = Int(Double(self.capacityBuffer.reduce(0,+)) / Double(self.capacityBuffer.count))
+                let avgBatteryPower = self.batteryPowerBuffer.reduce(0,+) / Double(self.batteryPowerBuffer.count)
+                let avgAdapterWatts = Int(Double(self.adapterWattsBuffer.reduce(0,+)) / Double(self.adapterWattsBuffer.count))
+                let avgSystemLoad = self.systemLoadBuffer.reduce(0,+) / Double(self.systemLoadBuffer.count)
 
-            if self.isCharging {
-                self.batteryPower = abs(calcPower)
-            } else if rawAmps < 0 {
-                self.batteryPower = -abs(calcPower)
-            } else {
-                self.batteryPower = 0.0
-            }
+                self.isCharging = avgIsCharging
+                self.isPluggedIn = avgIsPluggedIn
+                self.capacity = avgCapacity
+                self.batteryPower = avgBatteryPower
+                self.adapterWatts = avgAdapterWatts
+                self.systemLoad = avgSystemLoad
+                self.history.append(avgSystemLoad)
+                if self.history.count > self.historyLimit {
+                    self.history.removeFirst(self.history.count - self.historyLimit)
+                }
 
-            if let adapterDetails = dict["AdapterDetails"] as? [String: Any] {
-                self.adapterWatts = (adapterDetails["Watts"] as? NSNumber)?.intValue ?? 0
-            } else if let rawAdapterDetails = dict["AppleRawAdapterDetails"] as? [String: Any] {
-                self.adapterWatts = (rawAdapterDetails["Watts"] as? NSNumber)?.intValue ?? 0
-            } else {
-                self.adapterWatts = 0
-            }
-
-            if let telemetry = dict["PowerTelemetryData"] as? [String: Any],
-               let sysLoad = (telemetry["SystemLoad"] as? NSNumber)?.doubleValue {
-                self.systemLoad = sysLoad / 1000.0
-            }
-
-            self.history.append(self.systemLoad)
-            if self.history.count > self.historyLimit {
-                self.history.removeFirst(self.history.count - self.historyLimit)
+                // Clear buffers and poll counter
+                self.isChargingBuffer.removeAll()
+                self.isPluggedInBuffer.removeAll()
+                self.capacityBuffer.removeAll()
+                self.batteryPowerBuffer.removeAll()
+                self.adapterWattsBuffer.removeAll()
+                self.systemLoadBuffer.removeAll()
+                self.pollCounter = 0
             }
         }
     }
+
+//    private func updateStats() {
+//        let service = IOServiceGetMatchingService(kIOMainPortDefault, IOServiceMatching("AppleSmartBattery"))
+//        guard service != 0 else { return }
+//        defer { IOObjectRelease(service) }
+//
+//        var prop: Unmanaged<CFMutableDictionary>?
+//        guard IORegistryEntryCreateCFProperties(service, &prop, kCFAllocatorDefault, 0) == kIOReturnSuccess,
+//              let dict = prop?.takeUnretainedValue() as? [String: Any] else {
+//            return
+//        }
+//
+//        DispatchQueue.main.async {
+//            self.isCharging = dict["IsCharging"] as? Bool ?? false
+//            self.isPluggedIn = dict["ExternalConnected"] as? Bool ?? false
+//            self.capacity = (dict["CurrentCapacity"] as? NSNumber)?.intValue ?? 0
+//
+//            let rawAmps = (dict["InstantAmperage"] as? NSNumber)?.doubleValue ?? 0.0
+//            let volts = (dict["Voltage"] as? NSNumber)?.doubleValue ?? 0.0
+//            let calcPower = (rawAmps * volts) / 1_000_000.0
+//
+//            if self.isCharging {
+//                self.batteryPower = abs(calcPower)
+//            } else if rawAmps < 0 {
+//                self.batteryPower = -abs(calcPower)
+//            } else {
+//                self.batteryPower = 0.0
+//            }
+//
+//            if let adapterDetails = dict["AdapterDetails"] as? [String: Any] {
+//                self.adapterWatts = (adapterDetails["Watts"] as? NSNumber)?.intValue ?? 0
+//            } else if let rawAdapterDetails = dict["AppleRawAdapterDetails"] as? [String: Any] {
+//                self.adapterWatts = (rawAdapterDetails["Watts"] as? NSNumber)?.intValue ?? 0
+//            } else {
+//                self.adapterWatts = 0
+//            }
+//
+//            if let telemetry = dict["PowerTelemetryData"] as? [String: Any],
+//               let sysLoad = (telemetry["SystemLoad"] as? NSNumber)?.doubleValue {
+//                self.systemLoad = sysLoad / 1000.0
+//            }
+//
+//            self.history.append(self.systemLoad)
+//            if self.history.count > self.historyLimit {
+//                self.history.removeFirst(self.history.count - self.historyLimit)
+//            }
+//        }
+//    }
 }
