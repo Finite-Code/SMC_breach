@@ -6,9 +6,15 @@
 	objectVersion = 90;
 	objects = {
 
+/* Begin PBXBuildFile section */
+		450190B1301A581800102FDA /* .wakatime-project in Resources */ = {isa = PBXBuildFile; fileRef = 450190B0301A581400102FDA /* .wakatime-project */; };
+		450190B3301A626300102FDA /* SMC_breach.plist in Resources */ = {isa = PBXBuildFile; fileRef = 450190B2301A626300102FDA /* SMC_breach.plist */; };
+/* End PBXBuildFile section */
+
 /* Begin PBXFileReference section */
 		000000000000000000000120 /* SMC Breach.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = "SMC Breach.app"; sourceTree = BUILT_PRODUCTS_DIR; };
-		454A158D301A5331006863AE /* MyApp-Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist; path = "MyApp-Info.plist"; sourceTree = "<group>"; };
+		450190B0301A581400102FDA /* .wakatime-project */ = {isa = PBXFileReference; lastKnownFileType = text; path = ".wakatime-project"; sourceTree = "<group>"; };
+		450190B2301A626300102FDA /* SMC_breach.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = SMC_breach.plist; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFileSystemSynchronizedRootGroup section */
@@ -31,8 +37,9 @@
 		000000000000000000000001 = {
 			isa = PBXGroup;
 			children = (
-				454A158D301A5331006863AE /* MyApp-Info.plist */,
+				450190B2301A626300102FDA /* SMC_breach.plist */,
 				000000000000000000000010 /* SMC_breach */,
+				450190B0301A581400102FDA /* .wakatime-project */,
 				000000000000000000000020 /* Products */,
 			);
 			sourceTree = "<group>";
@@ -104,6 +111,8 @@
 		000000000000000140000000 /* Resources */ = {
 			isa = PBXResourcesBuildPhase;
 			files = (
+				450190B1301A581800102FDA /* .wakatime-project in Resources */,
+				450190B3301A626300102FDA /* SMC_breach.plist in Resources */,
 			);
 		};
 /* End PBXResourcesBuildPhase section */
@@ -236,6 +245,7 @@
 				GCC_WARN_UNINITIALIZED_AUTOS = YES_AGGRESSIVE;
 				GCC_WARN_UNUSED_FUNCTION = YES;
 				GCC_WARN_UNUSED_VARIABLE = YES;
+				"INFOPLIST_FILE[sdk=macosx*]" = "";
 				IPHONEOS_DEPLOYMENT_TARGET = 27.0;
 				LOCALIZATION_PREFERS_STRING_CATALOGS = YES;
 				MACOSX_DEPLOYMENT_TARGET = 27.0;
@@ -258,7 +268,7 @@
 				ENABLE_PREVIEWS = YES;
 				ENABLE_USER_SELECTED_FILES = readonly;
 				GENERATE_INFOPLIST_FILE = YES;
-				INFOPLIST_FILE = "MyApp-Info.plist";
+				INFOPLIST_FILE = SMC_breach.plist;
 				INFOPLIST_KEY_CFBundleDisplayName = "SMC Breach";
 				INFOPLIST_KEY_LSApplicationCategoryType = "public.app-category.utilities";
 				INFOPLIST_KEY_LSUIElement = YES;
@@ -300,7 +310,7 @@
 				ENABLE_PREVIEWS = YES;
 				ENABLE_USER_SELECTED_FILES = readonly;
 				GENERATE_INFOPLIST_FILE = YES;
-				INFOPLIST_FILE = "MyApp-Info.plist";
+				INFOPLIST_FILE = SMC_breach.plist;
 				INFOPLIST_KEY_CFBundleDisplayName = "SMC Breach";
 				INFOPLIST_KEY_LSApplicationCategoryType = "public.app-category.utilities";
 				INFOPLIST_KEY_LSUIElement = YES;
