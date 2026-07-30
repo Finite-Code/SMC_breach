@@ -2,7 +2,7 @@
 
 A sleek macOS menu bar utility that dives into hidden system APIs to broadcast live power consumption, battery health, and logic board stats.
 
--- TODO: Add image here XD --
+<img width="1256" height="920" alt="Screen Recording 2026-07-31 at 00 47 53" src="https://github.com/user-attachments/assets/1aa64d75-ec11-4836-96d1-ff6d0b12f3d5" />
 
 **[🚀 DOWNLOAD THE LATEST DEMO RELEASE HERE](https://www.google.com/search?q=https://github.com/your-username/SMC_breach/releases)**
 
@@ -22,7 +22,7 @@ The Demo UI is fully plugged in, pulling metrics directly from your machine.
 * **Adapter Wattage:** Displays the total DC power entering the machine’s logic board directly from the external AC adapter.
 * **System Power Load:** Live system load/uptime tracking alongside raw battery capacity.
 * **Menu Bar Native:** A pure `.menuBarExtra` SwiftUI app. It's completely out of your way until you need it.
-* ** TODO: Liquid UI Delight:** Beautifully grouped layout utilizing SF Symbols to get the best of UX and a delight to the eye.
+* **Liquid Glass:** Beautifully grouped layout utilizing SF Symbols to get the best of UX and a delight to the eye.
 
 ## How to run it locally
 
