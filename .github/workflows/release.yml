@@ -7,7 +7,7 @@ on:
 
 jobs:
   release:
-    runs-on: macos-15 # Targets macOS 15+ environments containing modern Xcode 26 toolchains
+    runs-on: macos-latest # Targets macOS 15+ environments containing modern Xcode 26 toolchains
     permissions:
       contents: write # Grants GitHub permission to create a release and upload files
     
