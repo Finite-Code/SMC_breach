@@ -7,7 +7,7 @@ on:
 
 jobs:
   release:
-    runs-on: macos-15 # Required OS platform to support modern Xcode toolchains
+    runs-on: macos-15 # Targets macOS 15+ environments containing modern Xcode 26 toolchains
     permissions:
       contents: write # Grants GitHub permission to create a release and upload files
     
@@ -15,9 +15,9 @@ jobs:
       - name: Checkout Code
         uses: actions/checkout@v4
 
-      - name: Select Xcode 16.3+ for Project Format 90
+      - name: Select Xcode 26 for Liquid Glass Support
         run: |
-          sudo xcode-select -s "/Applications/Xcode_16.3.app"
+          sudo xcode-select -s "/Applications/Xcode_26.0.app"
 
       - name: Extract Version String
         id: get_version

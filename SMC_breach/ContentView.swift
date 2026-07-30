@@ -88,10 +88,7 @@ struct PowerMonitorView: View {
         }
         .padding(20)
         .frame(width: 340)
-        // 1. Replaced material background and stroke overlay with native Liquid Glass
-        .glassEffect(.regular, in: .rect(cornerRadius: 24, style: .continuous))
-        // 2. Used semantic foreground styles inside sections (e.g., .primary, .secondary)
-        // to automatically adapt contrast and blending over the glass layer.
+        .glassBackground(cornerRadius: 24)
         .environment(\.colorScheme, .dark)
         .opacity(appeared ? 1 : 0)
         .scaleEffect(appeared ? 1 : 0.97)
@@ -147,9 +144,7 @@ struct PowerMonitorView: View {
             }
         }
         .padding(16)
-        .glassEffect(.regular, in: .rect(cornerRadius: 24, style: .continuous))
-        // 2. Used semantic foreground styles inside sections (e.g., .primary, .secondary)
-        // to automatically adapt contrast and blending over the glass layer.
+        .glassBackground(cornerRadius: 24)
         .environment(\.colorScheme, .dark)
         .opacity(appeared ? 1 : 0)
         .scaleEffect(appeared ? 1 : 0.97)
@@ -219,7 +214,7 @@ struct PowerMonitorView: View {
             .animation(.easeOut(duration: 0.35), value: powerMonitor.history)
         }
         .padding(16)
-        .glassEffect(.clear, in: .rect(cornerRadius: 16, style: .continuous))
+        .glassBackground(cornerRadius: 16, variant: .clear)
     }
 
     // MARK: Bottom Actions
