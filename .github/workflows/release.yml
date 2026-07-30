@@ -17,7 +17,6 @@ jobs:
 
       - name: Select Xcode 16.3+ for Project Format 90
         run: |
-          # Explicitly sets Xcode 16.3 to process objectVersion = 90 compatibility
           sudo xcode-select -s "/Applications/Xcode_16.3.app"
 
       - name: Extract Version String
@@ -41,17 +40,22 @@ jobs:
 
       - name: Export and Build Raw Package (.pkg)
         run: |
-          # Extract the compiled .app file from the Xcode structure
+          # Create temporary deployment directory
           mkdir -p $RUNNER_TEMP/ExportedApp
-          cp -R $RUNNER_TEMP/SMC_breach.xcarchive/Products/Applications/SMC_breach.app $RUNNER_TEMP/ExportedApp/
           
-          # Strip out any local machine ad-hoc signatures to prevent immediate crashes on other Macs
-          codesign --remove-signature "$RUNNER_TEMP/ExportedApp/SMC_breach.app" || true
+          # Copy the compiled '.app' file by properly handling the space in 'SMC Breach.app'
+          cp -R "$RUNNER_TEMP/SMC_breach.xcarchive/Products/Applications/SMC Breach.app" "$RUNNER_TEMP/ExportedApp/"
           
-          # Build a clean installer package (.pkg) instead of a zip file archive
+          # Strip out local ad-hoc signatures to ensure it runs correctly via the gatekeeper bypass
+          codesign --remove-signature "$RUNNER_TEMP/ExportedApp/SMC Breach.app" || true
+          
+          # Convert the space in the filename to match your preferred format for the installer payload
+          mv "$RUNNER_TEMP/ExportedApp/SMC Breach.app" "$RUNNER_TEMP/ExportedApp/SMC_breach.app"
+          
+          # Compile the final flat single installer file payload without compression archives
           pkgbuild --component "$RUNNER_TEMP/ExportedApp/SMC_breach.app" \
             --install-location "/Applications" \
-            $GITHUB_WORKSPACE/SMC_breach-${{ env.VERSION }}.pkg
+            "$GITHUB_WORKSPACE/SMC_breach-${{ env.VERSION }}.pkg"
 
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v2
