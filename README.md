@@ -30,7 +30,7 @@ Wanna breach the SMC yourself? It's pretty straightforward, just make sure you h
 
 ```bash
 # Clone the repository
-git clone https://github.com/your-username/SMC_breach.git
+git clone https://github.com/Finite-Code/SMC_breach.git
 
 # Navigate into the project
 cd SMC_breach
