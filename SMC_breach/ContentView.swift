@@ -2,6 +2,9 @@ import SwiftUI
 import Foundation
 import Combine
 import IOKit
+import IOKit.ps
+
+import Darwin // Lay the groundwork for IOReport
 
 // MARK: - Components
 
@@ -157,8 +160,8 @@ struct PowerMonitorView: View {
                                 LinearGradient(
                                     stops: [
                                         .init(color: .cyan.opacity(0.6), location: 0.0),   // Blue dispersion splay
-                                        .init(color: .white.opacity(0.4), location: 0.2),  // Core highlight
-                                        .init(color: .clear, location: 0.5),
+                                        .init(color: .orange.opacity(0.4), location: 0.2),  // Core highlight
+                                        .init(color: .blue, location: 0.5),
                                         .init(color: .red.opacity(0.5), location: 1.0)     // Red dispersion splay
                                     ],
                                     startPoint: .topLeading,
@@ -543,110 +546,140 @@ class PowerMonitor: ObservableObject {
 
     func start() {
         guard timer == nil else { return }
-        timer = Timer.scheduledTimer(withTimeInterval: 0.25, repeats: true) { [weak self] _ in
+        
+        // ISTG - IOkit implementation SUCKSS, this updates too SLOW, with the next commit or pretty soon, I'm replacing this with the private IOReport framework :)
+                
+        // 1. Initial data fetch to populate the UI immediately
+        pollAndBufferStats()
+            
+        // 2. Register for instant Kernel-level Power Notifications
+        // This fires exactly when the OS registers a power change (plugged in, unplugged, % drop)
+        let context = Unmanaged.passUnretained(self).toOpaque()
+        let loopSource = IOPSNotificationCreateRunLoopSource({ context in
+            guard let ctx = context else { return }
+            let monitor = Unmanaged<PowerMonitor>.fromOpaque(ctx).takeUnretainedValue()
+            DispatchQueue.main.async {
+                // Instantly update when the system broadcasts a hardware change
+                monitor.pollAndBufferStats()
+            }
+        }, context).takeRetainedValue()
+        
+        CFRunLoopAddSource(CFRunLoopGetMain(), loopSource, .commonModes)
+                
+        // 3. Maintain a slower 1-second timer strictly for the continuous Sparkline graph movement
+        timer = Timer.scheduledTimer(withTimeInterval: 1.0, repeats: true) { [weak self] _ in
             self?.pollAndBufferStats()
         }
-        pollAndBufferStats()
     }
 
-    private func pollAndBufferStats() {
-        let service = IOServiceGetMatchingService(kIOMainPortDefault, IOServiceMatching("AppleSmartBattery"))
-        guard service != 0 else { return }
-        defer { IOObjectRelease(service) }
+    @objc private func pollAndBufferStats() {
+            let service = IOServiceGetMatchingService(kIOMainPortDefault, IOServiceMatching("AppleSmartBattery"))
+            guard service != 0 else { return }
+            defer { IOObjectRelease(service) }
 
-        var prop: Unmanaged<CFMutableDictionary>?
-        guard IORegistryEntryCreateCFProperties(service, &prop, kCFAllocatorDefault, 0) == kIOReturnSuccess,
-              let dict = prop?.takeUnretainedValue() as? [String: Any] else {
-            return
-        }
+            var prop: Unmanaged<CFMutableDictionary>?
+            guard IORegistryEntryCreateCFProperties(service, &prop, kCFAllocatorDefault, 0) == kIOReturnSuccess,
+                  let dict = prop?.takeUnretainedValue() as? [String: Any] else {
+                return
+            }
 
-        // Poll all values and store them in buffers
-        let isChargingVal = dict["IsCharging"] as? Bool ?? false
-        let isPluggedInVal = dict["ExternalConnected"] as? Bool ?? false
-        let capacityVal = (dict["CurrentCapacity"] as? NSNumber)?.intValue ?? 0
-        let rawAmps = (dict["InstantAmperage"] as? NSNumber)?.doubleValue ?? 0.0
-        let volts = (dict["Voltage"] as? NSNumber)?.doubleValue ?? 0.0
-        let calcPower = (rawAmps * volts) / 1_000_000.0
-        let batteryPowerVal: Double
-        if isChargingVal {
-            batteryPowerVal = abs(calcPower)
-        } else if rawAmps < 0 {
-            batteryPowerVal = -abs(calcPower)
-        } else {
-            batteryPowerVal = 0.0
-        }
-        let adapterWattsVal: Int
-        if let adapterDetails = dict["AdapterDetails"] as? [String: Any] {
-            adapterWattsVal = (adapterDetails["Watts"] as? NSNumber)?.intValue ?? 0
-        } else if let rawAdapterDetails = dict["AppleRawAdapterDetails"] as? [String: Any] {
-            adapterWattsVal = (rawAdapterDetails["Watts"] as? NSNumber)?.intValue ?? 0
-        } else {
-            adapterWattsVal = 0
-        }
-        var systemLoadVal: Double = 0.0
-        if let telemetry = dict["PowerTelemetryData"] as? [String: Any],
-           let sysLoad = (telemetry["SystemLoad"] as? NSNumber)?.doubleValue {
-            systemLoadVal = sysLoad / 1000.0
-        }
+            // --- CORE STATE ---
+            let isChargingVal = dict["IsCharging"] as? Bool ?? false
+            let isPluggedInVal = dict["ExternalConnected"] as? Bool ?? false
+            
+            // --- THE 0% BUG FIX: CASCADING FALLBACKS ---
+            // Dynamically probe the hardware for raw values, degrading gracefully to standard keys if on newer Apple Silicon
+            let rawCurrent = (dict["AppleRawCurrentCapacity"] as? NSNumber)?.doubleValue ??
+                             (dict["CurrentCapacity"] as? NSNumber)?.doubleValue ?? 0.0
+            
+            let rawMax = (dict["AppleRawMaxCapacity"] as? NSNumber)?.doubleValue ??
+                         (dict["NominalChargeCapacity"] as? NSNumber)?.doubleValue ??
+                         (dict["MaxCapacity"] as? NSNumber)?.doubleValue ?? 1.0
+            
+            let trueCapacityPercentage = Int((rawCurrent / rawMax) * 100.0)
 
-        // Buffer
-        DispatchQueue.main.async {
-            self.isChargingBuffer.append(isChargingVal)
-            self.isPluggedInBuffer.append(isPluggedInVal)
-            self.capacityBuffer.append(capacityVal)
-            self.batteryPowerBuffer.append(batteryPowerVal)
-            self.adapterWattsBuffer.append(adapterWattsVal)
-            self.systemLoadBuffer.append(systemLoadVal)
-            self.pollCounter += 1
+            // --- POWER MATH ---
+            let rawAmps = (dict["InstantAmperage"] as? NSNumber)?.doubleValue ?? 0.0
+            let volts = (dict["Voltage"] as? NSNumber)?.doubleValue ?? 0.0
+            let calcPower = (rawAmps * volts) / 1_000_000.0
+            
+            let batteryPowerVal: Double
+            if isChargingVal {
+                batteryPowerVal = abs(calcPower)
+            } else if rawAmps < 0 {
+                batteryPowerVal = -abs(calcPower)
+            } else {
+                batteryPowerVal = 0.0
+            }
+            
+            let adapterWattsVal: Int
+            if let rawAdapterDetails = dict["AppleRawAdapterDetails"] as? [String: Any] {
+                adapterWattsVal = (rawAdapterDetails["Watts"] as? NSNumber)?.intValue ?? 0
+            } else if let adapterDetails = dict["AdapterDetails"] as? [String: Any] {
+                adapterWattsVal = (adapterDetails["Watts"] as? NSNumber)?.intValue ?? 0
+            } else {
+                adapterWattsVal = 0
+            }
+            
+            var systemLoadVal: Double = 0.0
+            if let telemetry = dict["PowerTelemetryData"] as? [String: Any],
+               let sysLoad = (telemetry["SystemLoad"] as? NSNumber)?.doubleValue {
+                systemLoadVal = sysLoad / 1000.0
+            }
 
-            if self.pollCounter >= 4 {
-                // Average buffers
-                let avgIsCharging = self.isChargingBuffer.filter { $0 }.count >= 2
-                let avgIsPluggedIn = self.isPluggedInBuffer.filter { $0 }.count >= 2
-                let avgCapacity = Int(Double(self.capacityBuffer.reduce(0,+)) / Double(self.capacityBuffer.count))
-                let avgBatteryPower = self.batteryPowerBuffer.reduce(0,+) / Double(self.batteryPowerBuffer.count)
-                let avgAdapterWatts = Int(Double(self.adapterWattsBuffer.reduce(0,+)) / Double(self.adapterWattsBuffer.count))
-                let avgSystemLoad = self.systemLoadBuffer.reduce(0,+) / Double(self.systemLoadBuffer.count)
+            // --- BUFFER & UI UPDATE ---
+            DispatchQueue.main.async {
+                self.isChargingBuffer.append(isChargingVal)
+                self.isPluggedInBuffer.append(isPluggedInVal)
+                self.capacityBuffer.append(trueCapacityPercentage)
+                self.batteryPowerBuffer.append(batteryPowerVal)
+                self.adapterWattsBuffer.append(adapterWattsVal)
+                self.systemLoadBuffer.append(systemLoadVal)
+                self.pollCounter += 1
 
-                self.isCharging = avgIsCharging
-                self.isPluggedIn = avgIsPluggedIn
-                self.capacity = avgCapacity
-                self.batteryPower = avgBatteryPower
-                self.adapterWatts = avgAdapterWatts
-                self.systemLoad = avgSystemLoad
-                
-                // 1. Maintain Sparkline sliding history
-                self.history.append(avgSystemLoad)
-                if self.history.count > self.historyLimit {
-                    self.history.removeFirst(self.history.count - self.historyLimit)
-                }
-                
-                // 2. Maintain strict 5-minute intervals for the Bar Chart
-                self.currentBarSamples.append(avgSystemLoad)
-                
-                // Once we hit 300 seconds (5 mins), freeze it into history and restart the bin
-                if self.currentBarSamples.count >= 300 {
-                    let finalizedAverage = self.currentBarSamples.reduce(0, +) / Double(self.currentBarSamples.count)
-                    self.barHistory.append(finalizedAverage)
-                    self.currentBarSamples.removeAll()
+                // We lowered the buffer requirement slightly so the UI feels snappier when responding to Kernel events
+                if self.pollCounter >= 2 {
+                    let avgIsCharging = self.isChargingBuffer.filter { $0 }.count >= 1
+                    let avgIsPluggedIn = self.isPluggedInBuffer.filter { $0 }.count >= 1
+                    let avgCapacity = Int(Double(self.capacityBuffer.reduce(0,+)) / Double(self.capacityBuffer.count))
+                    let avgBatteryPower = self.batteryPowerBuffer.reduce(0,+) / Double(self.batteryPowerBuffer.count)
+                    let avgAdapterWatts = Int(Double(self.adapterWattsBuffer.reduce(0,+)) / Double(self.adapterWattsBuffer.count))
+                    let avgSystemLoad = self.systemLoadBuffer.reduce(0,+) / Double(self.systemLoadBuffer.count)
+
+                    self.isCharging = avgIsCharging
+                    self.isPluggedIn = avgIsPluggedIn
+                    self.capacity = avgCapacity
+                    self.batteryPower = avgBatteryPower
+                    self.adapterWatts = avgAdapterWatts
+                    self.systemLoad = avgSystemLoad
                     
-                    // We only ever need 11 historical buckets (plus the 1 current one forming = 12 total)
-                    if self.barHistory.count > 11 {
-                        self.barHistory.removeFirst(self.barHistory.count - 11)
+                    // Update graph arrays
+                    self.history.append(avgSystemLoad)
+                    if self.history.count > self.historyLimit {
+                        self.history.removeFirst(self.history.count - self.historyLimit)
                     }
-                }
-                
-                self.saveHistoryToDisk()
+                    
+                    self.currentBarSamples.append(avgSystemLoad)
+                    if self.currentBarSamples.count >= 300 {
+                        let finalizedAverage = self.currentBarSamples.reduce(0, +) / Double(self.currentBarSamples.count)
+                        self.barHistory.append(finalizedAverage)
+                        self.currentBarSamples.removeAll()
+                        
+                        if self.barHistory.count > 11 {
+                            self.barHistory.removeFirst(self.barHistory.count - 11)
+                        }
+                    }
+                    
+                    self.saveHistoryToDisk()
 
-                // Clear buffers and poll counter
-                self.isChargingBuffer.removeAll()
-                self.isPluggedInBuffer.removeAll()
-                self.capacityBuffer.removeAll()
-                self.batteryPowerBuffer.removeAll()
-                self.adapterWattsBuffer.removeAll()
-                self.systemLoadBuffer.removeAll()
-                self.pollCounter = 0
+                    self.isChargingBuffer.removeAll()
+                    self.isPluggedInBuffer.removeAll()
+                    self.capacityBuffer.removeAll()
+                    self.batteryPowerBuffer.removeAll()
+                    self.adapterWattsBuffer.removeAll()
+                    self.systemLoadBuffer.removeAll()
+                    self.pollCounter = 0
+                }
             }
         }
-    }
 }
