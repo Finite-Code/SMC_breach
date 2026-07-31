@@ -35,22 +35,24 @@ jobs:
             CODE_SIGNING_ALLOWED=NO \
             CODE_SIGNING_REQUIRED=NO \
             CODE_SIGN_IDENTITY=""
-
-      - name: Export and Build Raw Package (.pkg)
+            
+    - name: Export and Build Raw Package (.pkg)
         run: |
-          # Create temporary deployment directory
           mkdir -p $RUNNER_TEMP/ExportedApp
           
-          # Copy the compiled '.app' file by properly handling the space in 'SMC Breach.app'
+          # Copy the app
           cp -R "$RUNNER_TEMP/SMC_breach.xcarchive/Products/Applications/SMC Breach.app" "$RUNNER_TEMP/ExportedApp/"
           
-          # Strip out local ad-hoc signatures to ensure it runs correctly via the gatekeeper bypass
-          codesign --remove-signature "$RUNNER_TEMP/ExportedApp/SMC Breach.app" || true
-          
-          # Convert the space in the filename to match your preferred format for the installer payload
+          # Convert space in filename
           mv "$RUNNER_TEMP/ExportedApp/SMC Breach.app" "$RUNNER_TEMP/ExportedApp/SMC_breach.app"
           
-          # Compile the final flat single installer file payload without compression archives
+          # FORCE EXECUTABLE PERMISSIONS HERE
+          chmod +x "$RUNNER_TEMP/ExportedApp/SMC_breach.app/Contents/MacOS/"*
+          
+          # Strip signature
+          codesign --remove-signature "$RUNNER_TEMP/ExportedApp/SMC_breach.app" || true
+          
+          # Build PKG
           pkgbuild --component "$RUNNER_TEMP/ExportedApp/SMC_breach.app" \
             --install-location "/Applications" \
             "$GITHUB_WORKSPACE/SMC_breach-${{ env.VERSION }}.pkg"
