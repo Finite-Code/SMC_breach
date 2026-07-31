@@ -3,6 +3,44 @@ import Foundation
 import Combine
 import IOKit
 
+// MARK: - Components
+
+struct AppleRollingText: View {
+    let text: String
+    var font: Font = .system(size: 48, weight: .heavy, design: .rounded)
+    var foregroundColor: Color = .white
+    var lineLimit: Int? = nil
+    var minimumScaleFactor: CGFloat = 1.0
+    
+    // Tracks the current value to compare if the number is going up or down
+    @State private var previousValue: Double = 0.0
+    
+    // Derived state to determine if the roll should invert
+    private var countsDown: Bool {
+        let cleanCurrent = Double(text.replacingOccurrences(of: "[^0-9.]", with: "", options: .regularExpression)) ?? 0
+        return cleanCurrent < previousValue
+    }
+    
+    var body: some View {
+        Text(text)
+            .font(font)
+            .foregroundColor(foregroundColor)
+            .monospacedDigit()
+            // Apple Quality Lock: flips the scroll wheel physics when counting down!
+            .contentTransition(.numericText(countsDown: countsDown))
+            .lineLimit(lineLimit)
+            .minimumScaleFactor(minimumScaleFactor)
+            .fixedSize(horizontal: false, vertical: true)
+            .clipped()
+            .animation(.snappy(duration: 0.35, extraBounce: 0.1), value: text)
+            // Silently updates our tracker background reference frame
+            .onChange(of: text) { _, newValue in
+                let cleanNew = Double(newValue.replacingOccurrences(of: "[^0-9.]", with: "", options: .regularExpression)) ?? 0
+                previousValue = cleanNew
+            }
+    }
+}
+
 // MARK: - App
 
 @available(macOS 14.0, *)
@@ -24,9 +62,10 @@ struct SMC_breach: App {
                 Image(systemName: powerMonitor.menuBarIcon)
                     .symbolRenderingMode(.hierarchical)
                     .symbolEffect(.pulse, options: .repeating, isActive: powerMonitor.isCharging)
-                Text("\(powerMonitor.capacity)%")
-                    .font(.system(.body, design: .rounded).monospacedDigit())
-                    .contentTransition(.numericText())
+                AppleRollingText(
+                    text: String(format: "%.1f W", powerMonitor.systemLoad),
+                    font: .system(size: 14, weight: .semibold, design: .rounded)
+                )
             }
         }
         .menuBarExtraStyle(.window)
@@ -39,44 +78,6 @@ struct SMC_breach: App {
 struct PowerMonitorView: View {
     @EnvironmentObject var powerMonitor: PowerMonitor
     @State private var appeared = false
-    
-    // Introduce Rolling Text:
-    struct AppleRollingText: View {
-        let text: String
-        var font: Font = .system(size: 48, weight: .heavy, design: .rounded)
-        var foregroundColor: Color = .white
-        var lineLimit: Int? = nil
-        var minimumScaleFactor: CGFloat = 1.0
-        
-        // Tracks the current value to compare if the number is going up or down
-        @State private var previousValue: Double = 0.0
-        
-        // Derived state to determine if the roll should invert
-        private var countsDown: Bool {
-            let cleanCurrent = Double(text.replacingOccurrences(of: "[^0-9.]", with: "", options: .regularExpression)) ?? 0
-            return cleanCurrent < previousValue
-        }
-        
-        var body: some View {
-            Text(text)
-                .font(font)
-                .foregroundColor(foregroundColor)
-                .monospacedDigit()
-                // Apple Quality Lock: flips the scroll wheel physics when counting down!
-                .contentTransition(.numericText(countsDown: countsDown))
-                .lineLimit(lineLimit)
-                .minimumScaleFactor(minimumScaleFactor)
-                .fixedSize(horizontal: false, vertical: true)
-                .clipped()
-                .animation(.snappy(duration: 0.35, extraBounce: 0.1), value: text)
-                // Silently updates our tracker background reference frame
-                .onChange(of: text) { _, newValue in
-                    let cleanNew = Double(newValue.replacingOccurrences(of: "[^0-9.]", with: "", options: .regularExpression)) ?? 0
-                    previousValue = cleanNew
-                }
-        }
-    }
-
     
     @available(macOS 26.0, *)
     var body: some View {
@@ -447,52 +448,4 @@ class PowerMonitor: ObservableObject {
             }
         }
     }
-
-//    private func updateStats() {
-//        let service = IOServiceGetMatchingService(kIOMainPortDefault, IOServiceMatching("AppleSmartBattery"))
-//        guard service != 0 else { return }
-//        defer { IOObjectRelease(service) }
-//
-//        var prop: Unmanaged<CFMutableDictionary>?
-//        guard IORegistryEntryCreateCFProperties(service, &prop, kCFAllocatorDefault, 0) == kIOReturnSuccess,
-//              let dict = prop?.takeUnretainedValue() as? [String: Any] else {
-//            return
-//        }
-//
-//        DispatchQueue.main.async {
-//            self.isCharging = dict["IsCharging"] as? Bool ?? false
-//            self.isPluggedIn = dict["ExternalConnected"] as? Bool ?? false
-//            self.capacity = (dict["CurrentCapacity"] as? NSNumber)?.intValue ?? 0
-//
-//            let rawAmps = (dict["InstantAmperage"] as? NSNumber)?.doubleValue ?? 0.0
-//            let volts = (dict["Voltage"] as? NSNumber)?.doubleValue ?? 0.0
-//            let calcPower = (rawAmps * volts) / 1_000_000.0
-//
-//            if self.isCharging {
-//                self.batteryPower = abs(calcPower)
-//            } else if rawAmps < 0 {
-//                self.batteryPower = -abs(calcPower)
-//            } else {
-//                self.batteryPower = 0.0
-//            }
-//
-//            if let adapterDetails = dict["AdapterDetails"] as? [String: Any] {
-//                self.adapterWatts = (adapterDetails["Watts"] as? NSNumber)?.intValue ?? 0
-//            } else if let rawAdapterDetails = dict["AppleRawAdapterDetails"] as? [String: Any] {
-//                self.adapterWatts = (rawAdapterDetails["Watts"] as? NSNumber)?.intValue ?? 0
-//            } else {
-//                self.adapterWatts = 0
-//            }
-//
-//            if let telemetry = dict["PowerTelemetryData"] as? [String: Any],
-//               let sysLoad = (telemetry["SystemLoad"] as? NSNumber)?.doubleValue {
-//                self.systemLoad = sysLoad / 1000.0
-//            }
-//
-//            self.history.append(self.systemLoad)
-//            if self.history.count > self.historyLimit {
-//                self.history.removeFirst(self.history.count - self.historyLimit)
-//            }
-//        }
-//    }
 }
