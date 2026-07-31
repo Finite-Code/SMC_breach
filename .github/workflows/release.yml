@@ -49,9 +49,9 @@ jobs:
           # FORCE EXECUTABLE PERMISSIONS HERE
           chmod +x "$RUNNER_TEMP/ExportedApp/SMC_breach.app/Contents/MacOS/"*
           
-          # Strip signature
-          codesign --remove-signature "$RUNNER_TEMP/ExportedApp/SMC_breach.app" || true
-          
+          # APPLY AD-HOC SIGNATURE (Apparently Crucial for Apple Silicon)
+          codesign --force --deep --sign - "$RUNNER_TEMP/ExportedApp/SMC_breach.app"
+                    
           # Build PKG
           pkgbuild --component "$RUNNER_TEMP/ExportedApp/SMC_breach.app" \
             --install-location "/Applications" \
