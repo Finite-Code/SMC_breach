@@ -79,6 +79,62 @@ struct PowerMonitorView: View {
     @EnvironmentObject var powerMonitor: PowerMonitor
     @State private var appeared = false
     
+    // Helper struct for bar samples
+    private struct BarSample {
+        let height: CGFloat
+        let color: Color
+        let isEmpty: Bool
+    }
+    
+    private var barSamples: [BarSample] {
+        let maxBars = 12
+        var values: [Double] = powerMonitor.barHistory
+        
+        // Add the currently forming 5-minute interval as the fluctuating right-most bar
+        if !powerMonitor.currentBarSamples.isEmpty {
+            let currentAvg = powerMonitor.currentBarSamples.reduce(0, +) / Double(powerMonitor.currentBarSamples.count)
+            values.append(currentAvg)
+        }
+        
+        guard !values.isEmpty else { return [] }
+        
+        let minSample = values.min() ?? 0
+        let maxSample = values.max() ?? 1
+        let range = max(maxSample - minSample, 0.01)
+        let minBarHeight: CGFloat = 8
+        
+        let sortedIndices = values.enumerated().sorted { $0.element < $1.element }.map { $0.offset }
+        let thirdCount = max(1, values.count / 3)
+        
+        var result: [BarSample] = []
+        
+        // Pad the left side with empty items until we reach an hour's worth of data
+        let paddingCount = max(0, maxBars - values.count)
+        for _ in 0..<paddingCount {
+            result.append(BarSample(height: 0, color: .clear, isEmpty: true))
+        }
+        
+        // Map our finalized and current actual data points
+        for (i, value) in values.enumerated() {
+            let normalizedHeight = CGFloat((value - minSample) / range)
+            let height = max(minBarHeight, normalizedHeight * 35)
+            let rank = sortedIndices.firstIndex(of: i) ?? 0
+            
+            let color: Color
+            if rank < thirdCount {
+                color = .red
+            } else if rank < 2 * thirdCount {
+                color = .yellow
+            } else {
+                color = .green
+            }
+            
+            result.append(BarSample(height: height, color: color, isEmpty: false))
+        }
+        
+        return result
+    }
+    
     @available(macOS 26.0, *)
     var body: some View {
         VStack(spacing: 24) {
@@ -101,7 +157,7 @@ struct PowerMonitorView: View {
     }
     
     // MARK: Header — Status & Bar Chart
-
+    
     @available(macOS 26.0, *)
     private var topSection: some View {
         HStack(alignment: .top) {
@@ -117,14 +173,19 @@ struct PowerMonitorView: View {
 
             Spacer()
 
-            // Mock Bar Chart matching the image's layout
             VStack(alignment: .trailing, spacing: 6) {
                 HStack(alignment: .bottom, spacing: 4) {
-                    // Simulating historic bar data
-                    ForEach(0..<12, id: \.self) { i in
-                        Capsule()
-                            .fill(i > 7 ? Color.green : Color.yellow)
-                            .frame(width: 4, height: CGFloat.random(in: 10...35))
+                    ForEach(Array(barSamples.enumerated()), id: \.offset) { (i, bar) in
+                        if bar.isEmpty {
+                            Capsule()
+                                .fill(Color.clear)
+                                .frame(width: 4, height: 35) // Takes up horizontal width, but is invisible
+                        } else {
+                            Capsule()
+                                .fill(bar.color)
+                                .frame(width: 4, height: bar.height)
+                                .animation(.spring(response: 0.3, dampingFraction: 0.7), value: bar.height)
+                        }
                     }
                 }
                 .frame(height: 35)
@@ -136,8 +197,10 @@ struct PowerMonitorView: View {
 
                 HStack {
                     Text("1hr")
+                        .padding(.leading, 2)
                     Spacer()
                     Text("now")
+                        .padding(.trailing, 2)
                 }
                 .font(.system(size: 10, weight: .bold))
                 .foregroundColor(.white.opacity(0.6))
@@ -250,7 +313,6 @@ struct PowerMonitorView: View {
 
             Spacer()
 
-            // Circular icon buttons matching the reference image's stroked circles
             circleIconButton(systemName: "chevron.left.forwardslash.chevron.right") {
                 // Open Github action
             }
@@ -325,6 +387,14 @@ struct SparklineArea: Shape {
     }
 }
 
+// MARK: - Data Models
+
+struct PowerMonitorData: Codable {
+    var history: [Double]
+    var barHistory: [Double]
+    var currentBarSamples: [Double]
+}
+
 // MARK: - Power Monitor Logic
 
 class PowerMonitor: ObservableObject {
@@ -334,9 +404,15 @@ class PowerMonitor: ObservableObject {
     @Published var adapterWatts: Int = 0
     @Published var capacity: Int = 0
     @Published var systemLoad: Double = 0.0
-    @Published var history: [Double] = []
-
-    private let historyLimit = 40
+    
+    // Arrays for history visualization
+    @Published var history: [Double] = [] // Full 1-second interval trend graph (Sparkline)
+    @Published var barHistory: [Double] = [] // Finalized, non-moving 5-min intervals
+    @Published var currentBarSamples: [Double] = [] // Current, fluctuating 5-min interval
+    
+    // Increase historyLimit to store 1 hour of data (4 samples/sec × 60 × 60 = 14,400 entries)
+    private let historyLimit = 14400
+    
     private var timer: Timer?
 
     // Buffers for polling
@@ -347,7 +423,75 @@ class PowerMonitor: ObservableObject {
     private var isChargingBuffer: [Bool] = []
     private var isPluggedInBuffer: [Bool] = []
     private var pollCounter = 0
-
+    
+    // File URL for saving and loading history data
+    private let historySaveURL: URL = {
+        let tempDir = FileManager.default.temporaryDirectory
+        return tempDir.appendingPathComponent("powerMonitorHistory.json")
+    }()
+    
+    // Load history from disk on init
+    init() {
+        loadHistoryFromDisk()
+    }
+    
+    /// Save all arrays to disk as structured JSON
+    private func saveHistoryToDisk() {
+        DispatchQueue.global(qos: .background).async {
+            let encoder = JSONEncoder()
+            let savedData = PowerMonitorData(
+                history: self.history,
+                barHistory: self.barHistory,
+                currentBarSamples: self.currentBarSamples
+            )
+            
+            if let data = try? encoder.encode(savedData) {
+                try? data.write(to: self.historySaveURL)
+            }
+        }
+    }
+    
+    /// Load history array from disk and migrate old flat arrays to chunked architecture
+    private func loadHistoryFromDisk() {
+        DispatchQueue.global(qos: .background).async {
+            let decoder = JSONDecoder()
+            guard let data = try? Data(contentsOf: self.historySaveURL) else { return }
+            
+            // Try loading the newly formatted struct
+            if let savedData = try? decoder.decode(PowerMonitorData.self, from: data) {
+                DispatchQueue.main.async {
+                    self.history = savedData.history
+                    self.barHistory = savedData.barHistory
+                    self.currentBarSamples = savedData.currentBarSamples
+                }
+            }
+            // Fallback for previous un-chunked history model (migration)
+            else if let oldHistory = try? decoder.decode([Double].self, from: data) {
+                DispatchQueue.main.async {
+                    self.history = oldHistory
+                    self.migrateOldHistoryToBars(oldHistory)
+                }
+            }
+        }
+    }
+    
+    /// Chunks up historical sliding window data cleanly into 5-minute fixed bins during migration
+    private func migrateOldHistoryToBars(_ oldHistory: [Double]) {
+        var chunks: [[Double]] = []
+        var chunkBuffer: [Double] = []
+        
+        for value in oldHistory {
+            chunkBuffer.append(value)
+            if chunkBuffer.count >= 300 { // 300 seconds = 5 mins
+                chunks.append(chunkBuffer)
+                chunkBuffer = []
+            }
+        }
+        
+        self.barHistory = chunks.suffix(11).map { $0.reduce(0, +) / Double($0.count) }
+        self.currentBarSamples = chunkBuffer
+    }
+    
     var menuBarIcon: String {
         if isCharging { return "battery.100.bolt" }
         switch capacity {
@@ -432,10 +576,29 @@ class PowerMonitor: ObservableObject {
                 self.batteryPower = avgBatteryPower
                 self.adapterWatts = avgAdapterWatts
                 self.systemLoad = avgSystemLoad
+                
+                // 1. Maintain Sparkline sliding history
                 self.history.append(avgSystemLoad)
                 if self.history.count > self.historyLimit {
                     self.history.removeFirst(self.history.count - self.historyLimit)
                 }
+                
+                // 2. Maintain strict 5-minute intervals for the Bar Chart
+                self.currentBarSamples.append(avgSystemLoad)
+                
+                // Once we hit 300 seconds (5 mins), freeze it into history and restart the bin
+                if self.currentBarSamples.count >= 300 {
+                    let finalizedAverage = self.currentBarSamples.reduce(0, +) / Double(self.currentBarSamples.count)
+                    self.barHistory.append(finalizedAverage)
+                    self.currentBarSamples.removeAll()
+                    
+                    // We only ever need 11 historical buckets (plus the 1 current one forming = 12 total)
+                    if self.barHistory.count > 11 {
+                        self.barHistory.removeFirst(self.barHistory.count - 11)
+                    }
+                }
+                
+                self.saveHistoryToDisk()
 
                 // Clear buffers and poll counter
                 self.isChargingBuffer.removeAll()
