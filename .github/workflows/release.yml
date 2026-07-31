@@ -7,7 +7,7 @@ on:
 
 jobs:
   release:
-    runs-on: xcode-27 # Targets native Apple Silicon environments pre-bundled with Xcode 27
+    runs-on: xcode-27 # NOTE: Ensure this is a valid self-hosted runner tag!
     permissions:
       contents: write # Grants GitHub permission to create a release and upload files
     
@@ -36,7 +36,7 @@ jobs:
             CODE_SIGNING_REQUIRED=NO \
             CODE_SIGN_IDENTITY=""
             
-    - name: Export and Build Raw Package (.pkg)
+      - name: Export and Build Raw Package (.pkg)
         run: |
           mkdir -p $RUNNER_TEMP/ExportedApp
           
