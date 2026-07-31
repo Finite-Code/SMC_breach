@@ -9,7 +9,6 @@
 /* Begin PBXBuildFile section */
 		450190B1301A581800102FDA /* .wakatime-project in Resources */ = {isa = PBXBuildFile; fileRef = 450190B0301A581400102FDA /* .wakatime-project */; };
 		450190B3301A626300102FDA /* SMC_breach.plist in Resources */ = {isa = PBXBuildFile; fileRef = 450190B2301A626300102FDA /* SMC_breach.plist */; };
-		45FFB98B301CEFB4001F4B65 /* smc_breach.icon in Resources */ = {isa = PBXBuildFile; fileRef = 45FFB98A301CEFB4001F4B65 /* smc_breach.icon */; };
 		45FFB991301CF1D1001F4B65 /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = 45FFB990301CF1D1001F4B65 /* Assets.xcassets */; };
 		45FFB995301CF26E001F4B65 /* AppIcon.icon in Resources */ = {isa = PBXBuildFile; fileRef = 45FFB994301CF26E001F4B65 /* AppIcon.icon */; };
 /* End PBXBuildFile section */
@@ -18,7 +17,6 @@
 		000000000000000000000120 /* SMC Breach.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = "SMC Breach.app"; sourceTree = BUILT_PRODUCTS_DIR; };
 		450190B0301A581400102FDA /* .wakatime-project */ = {isa = PBXFileReference; lastKnownFileType = text; path = ".wakatime-project"; sourceTree = "<group>"; };
 		450190B2301A626300102FDA /* SMC_breach.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = SMC_breach.plist; sourceTree = "<group>"; };
-		45FFB98A301CEFB4001F4B65 /* smc_breach.icon */ = {isa = PBXFileReference; lastKnownFileType = folder.iconcomposer.icon; path = smc_breach.icon; sourceTree = "<group>"; };
 		45FFB990301CF1D1001F4B65 /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
 		45FFB994301CF26E001F4B65 /* AppIcon.icon */ = {isa = PBXFileReference; lastKnownFileType = folder.iconcomposer.icon; path = AppIcon.icon; sourceTree = "<group>"; };
 /* End PBXFileReference section */
@@ -45,7 +43,6 @@
 			children = (
 				45FFB990301CF1D1001F4B65 /* Assets.xcassets */,
 				45FFB994301CF26E001F4B65 /* AppIcon.icon */,
-				45FFB98A301CEFB4001F4B65 /* smc_breach.icon */,
 				450190B2301A626300102FDA /* SMC_breach.plist */,
 				000000000000000000000010 /* SMC_breach */,
 				450190B0301A581400102FDA /* .wakatime-project */,
@@ -123,7 +120,6 @@
 				450190B1301A581800102FDA /* .wakatime-project in Resources */,
 				450190B3301A626300102FDA /* SMC_breach.plist in Resources */,
 				45FFB991301CF1D1001F4B65 /* Assets.xcassets in Resources */,
-				45FFB98B301CEFB4001F4B65 /* smc_breach.icon in Resources */,
 				45FFB995301CF26E001F4B65 /* AppIcon.icon in Resources */,
 			);
 		};
@@ -274,8 +270,13 @@
 		000000000000000111000000 /* Debug configuration for PBXNativeTarget "SMC Breach" */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
+				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
+				ASSETCATALOG_COMPILER_INCLUDE_ALL_APPICON_ASSETS = YES;
+				"CODE_SIGN_IDENTITY[sdk=macosx*]" = "-";
 				CODE_SIGN_STYLE = Automatic;
 				CURRENT_PROJECT_VERSION = 1;
+				DEVELOPMENT_ASSET_PATHS = Assets.xcassets;
+				DEVELOPMENT_TEAM = 4GGQ5LQR92;
 				ENABLE_APP_SANDBOX = YES;
 				ENABLE_PREVIEWS = YES;
 				ENABLE_USER_SELECTED_FILES = readonly;
@@ -297,8 +298,8 @@
 				LD_RUNPATH_SEARCH_PATHS = "@executable_path/Frameworks";
 				"LD_RUNPATH_SEARCH_PATHS[sdk=macosx*]" = "@executable_path/../Frameworks";
 				MACOSX_DEPLOYMENT_TARGET = 14.6;
-				MARKETING_VERSION = 1.0;
-				PRODUCT_BUNDLE_IDENTIFIER = "devplaceholder.$(PROJECT_UNIQUE_VALUE:identifier).$(PRODUCT_NAME:rfc1034identifier)";
+				MARKETING_VERSION = "1.0.14-alpha";
+				PRODUCT_BUNDLE_IDENTIFIER = "com.finitecode.SMC-breach";
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				REGISTER_APP_GROUPS = YES;
 				SDKROOT = auto;
@@ -316,8 +317,13 @@
 		000000000000000112000000 /* Release configuration for PBXNativeTarget "SMC Breach" */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
+				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
+				ASSETCATALOG_COMPILER_INCLUDE_ALL_APPICON_ASSETS = YES;
+				"CODE_SIGN_IDENTITY[sdk=macosx*]" = "-";
 				CODE_SIGN_STYLE = Automatic;
 				CURRENT_PROJECT_VERSION = 1;
+				DEVELOPMENT_ASSET_PATHS = Assets.xcassets;
+				DEVELOPMENT_TEAM = 4GGQ5LQR92;
 				ENABLE_APP_SANDBOX = YES;
 				ENABLE_PREVIEWS = YES;
 				ENABLE_USER_SELECTED_FILES = readonly;
@@ -339,8 +345,8 @@
 				LD_RUNPATH_SEARCH_PATHS = "@executable_path/Frameworks";
 				"LD_RUNPATH_SEARCH_PATHS[sdk=macosx*]" = "@executable_path/../Frameworks";
 				MACOSX_DEPLOYMENT_TARGET = 14.6;
-				MARKETING_VERSION = 1.0;
-				PRODUCT_BUNDLE_IDENTIFIER = "devplaceholder.$(PROJECT_UNIQUE_VALUE:identifier).$(PRODUCT_NAME:rfc1034identifier)";
+				MARKETING_VERSION = 1.0.14;
+				PRODUCT_BUNDLE_IDENTIFIER = "com.finitecode.SMC-breach";
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				REGISTER_APP_GROUPS = YES;
 				SDKROOT = auto;
