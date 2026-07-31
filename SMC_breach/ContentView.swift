@@ -145,11 +145,29 @@ struct PowerMonitorView: View {
         }
         .padding(20)
         .frame(width: 340)
-        .glassEffect(
-                    .clear
-                    .interactive(),
-                    in: .rect(cornerRadius: 24, style: .continuous)
-                )
+        .background(
+                RoundedRectangle(cornerRadius: 24, style: .continuous)
+                    // 1. Crystal clear background tint (zero blur, zero frost)
+                    .fill(Color.black.opacity(0.15))
+                    
+                    // 2. Simulated Chromatic Aberration & Splay on the extreme edges
+                    .overlay(
+                        RoundedRectangle(cornerRadius: 24, style: .continuous)
+                            .stroke(
+                                LinearGradient(
+                                    stops: [
+                                        .init(color: .cyan.opacity(0.6), location: 0.0),   // Blue dispersion splay
+                                        .init(color: .white.opacity(0.4), location: 0.2),  // Core highlight
+                                        .init(color: .clear, location: 0.5),
+                                        .init(color: .red.opacity(0.5), location: 1.0)     // Red dispersion splay
+                                    ],
+                                    startPoint: .topLeading,
+                                    endPoint: .bottomTrailing
+                                ),
+                                lineWidth: 1.5 // Sharp, crisp refractive edge
+                            )
+                    )
+            )
         .environment(\.colorScheme, .dark)
         .opacity(appeared ? 1 : 0)
         .scaleEffect(appeared ? 1 : 0.97)
@@ -216,6 +234,15 @@ struct PowerMonitorView: View {
                 Spacer() // Second spacer (balances the first to perfectly center horizontally)
             }
             .padding(16)
+            /* .background(
+                    RoundedRectangle(cornerRadius: 16, style: .continuous)
+                        .fill(Color.black.opacity(0.15)) // Subtle tint so content stays readable over light backgrounds
+                        .overlay(
+                            RoundedRectangle(cornerRadius: 16, style: .continuous)
+                                .stroke(.white.opacity(0.15), lineWidth: 1) // Crisp, sharp "glass" edge
+                        )
+                )
+            */
             .glassEffect(.clear, in: .rect(cornerRadius: 16))
             
             // Control total transparency by backing it with an ultra-faint dark dimming color
