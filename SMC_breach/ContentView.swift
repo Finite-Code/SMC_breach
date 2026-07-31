@@ -64,7 +64,7 @@ struct SMC_breach: App {
                     .symbolEffect(.pulse, options: .repeating, isActive: powerMonitor.isCharging)
                 AppleRollingText(
                     text: String(format: "%.1f W", powerMonitor.systemLoad),
-                    font: .system(size: 14, weight: .semibold, design: .rounded)
+                    font: .system(size: 14, weight: .semibold, design: .default)
                 )
             }
         }
@@ -145,7 +145,6 @@ struct PowerMonitorView: View {
         }
         .padding(20)
         .frame(width: 340)
-        .glassBackground(cornerRadius: 24)
         .environment(\.colorScheme, .dark)
         .opacity(appeared ? 1 : 0)
         .scaleEffect(appeared ? 1 : 0.97)
@@ -157,67 +156,71 @@ struct PowerMonitorView: View {
     }
     
     // MARK: Header — Status & Bar Chart
-    
-    @available(macOS 26.0, *)
-    private var topSection: some View {
-        HStack(alignment: .top) {
-            VStack(alignment: .leading, spacing: 0) {
-                Text(powerMonitor.isCharging ? "Charging" : (powerMonitor.isPluggedIn ? "Charging on hold" : "On Battery"))
-                    .font(.system(size: 18, weight: .bold, design: .rounded))
-                    .foregroundColor(.white)
-                    .lineLimit(1)
-                    .minimumScaleFactor(0.8)
+        
+        @available(macOS 26.0, *)
+        private var topSection: some View {
+            // 1. Changed alignment to .center for vertical centering
+            HStack(alignment: .center) {
+                VStack(alignment: .leading, spacing: 0) {
+                    Text(powerMonitor.isCharging ? "Charging" : (powerMonitor.isPluggedIn ? "Charging on hold" : "On Battery"))
+                        .font(.system(size: 18, weight: .bold, design: .rounded))
+                        .foregroundColor(.white)
+                        .lineLimit(1)
+                        .minimumScaleFactor(0.8)
 
-                AppleRollingText(text: "\(powerMonitor.capacity)%")
-            }
+                    AppleRollingText(text: "\(powerMonitor.capacity)%")
+                }
 
-            Spacer()
+                Spacer() // First spacer (between text and graph)
 
-            VStack(alignment: .trailing, spacing: 6) {
-                HStack(alignment: .bottom, spacing: 4) {
-                    ForEach(Array(barSamples.enumerated()), id: \.offset) { (i, bar) in
-                        if bar.isEmpty {
-                            Capsule()
-                                .fill(Color.clear)
-                                .frame(width: 4, height: 35) // Takes up horizontal width, but is invisible
-                        } else {
-                            Capsule()
-                                .fill(bar.color)
-                                .frame(width: 4, height: bar.height)
-                                .animation(.spring(response: 0.3, dampingFraction: 0.7), value: bar.height)
+                // 2. Changed alignment to .center to keep the floating UI balanced
+                VStack(alignment: .center, spacing: 6) {
+                    HStack(alignment: .bottom, spacing: 4) {
+                        ForEach(Array(barSamples.enumerated()), id: \.offset) { (i, bar) in
+                            if bar.isEmpty {
+                                Capsule()
+                                    .fill(Color.clear)
+                                    .frame(width: 4, height: 35)
+                            } else {
+                                Capsule()
+                                    .fill(bar.color)
+                                    .frame(width: 4, height: bar.height)
+                                    .animation(.spring(response: 0.3, dampingFraction: 0.7), value: bar.height)
+                            }
                         }
                     }
-                }
-                .frame(height: 35)
+                    .frame(height: 35)
 
-                // Thin divider under the bars, matching the reference image
-                Rectangle()
-                    .fill(Color.white.opacity(0.5))
-                    .frame(width: 90, height: 1)
+                    // Thin divider under the bars
+                    Rectangle()
+                        .fill(Color.white.opacity(0.5))
+                        .frame(width: 90, height: 1)
 
-                HStack {
-                    Text("1hr")
-                        .padding(.leading, 2)
-                    Spacer()
-                    Text("now")
-                        .padding(.trailing, 2)
+                    HStack {
+                        Text("1hr")
+                            .padding(.leading, 2)
+                        Spacer()
+                        Text("now")
+                            .padding(.trailing, 2)
+                    }
+                    .font(.system(size: 10, weight: .bold))
+                    .foregroundColor(.white.opacity(0.6))
+                    .frame(width: 90)
                 }
-                .font(.system(size: 10, weight: .bold))
-                .foregroundColor(.white.opacity(0.6))
-                .frame(width: 90)
+                
+                Spacer() // Second spacer (balances the first to perfectly center horizontally)
+            }
+            .padding(16)
+            .glassBackground(cornerRadius: 16, variant: .clear)
+            .environment(\.colorScheme, .dark)
+            .opacity(appeared ? 1 : 0)
+            .scaleEffect(appeared ? 1 : 0.97)
+            .onAppear {
+                withAnimation(.spring(response: 0.55, dampingFraction: 0.85)) {
+                    appeared = true
+                }
             }
         }
-        .padding(16)
-        .glassBackground(cornerRadius: 24)
-        .environment(\.colorScheme, .dark)
-        .opacity(appeared ? 1 : 0)
-        .scaleEffect(appeared ? 1 : 0.97)
-        .onAppear {
-            withAnimation(.spring(response: 0.55, dampingFraction: 0.85)) {
-                appeared = true
-            }
-        }
-    }
 
     // MARK: 3-Column Metrics Row
 
@@ -239,7 +242,7 @@ struct PowerMonitorView: View {
                 .foregroundColor(.white.opacity(0.8))
             AppleRollingText(
                 text: value,
-                font: .system(size: 24, weight: .bold, design: .rounded),
+                font: .system(size: 24, weight: .bold, design: .default),
                 foregroundColor: .white,
                 lineLimit: 1,
                 minimumScaleFactor: 0.7
