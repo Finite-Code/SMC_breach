@@ -1,10 +1,16 @@
-# SMC_breach
+<div align="center">
+<img src="https://github.com/user-attachments/assets/bd7b4ff9-9a85-400f-a6b1-56592717b003" width="196" height="196" style="border-radius: 40%" alt="AppIcon" />
+<br>
+<h1>SMC breach</h1>
+<p>A sleek macOS menu bar utility that dives into hidden system APIs to broadcast live power consumption, (todo: battery health, and logic board stats.)</p>
 
-A sleek macOS menu bar utility that dives into hidden system APIs to broadcast live power consumption, battery health, and logic board stats.
+[![Download for macOS](https://github.com/user-attachments/assets/40ed5dae-942a-4999-8953-38c632aeb64a)](https://github.com/Finite-Code/SMC_breach/releases/tag/v1.0.22)
+<!-- <img width="228" height="100" alt="Download for macOS - Made by @Finite-Code" src="https://github.com/user-attachments/assets/40ed5dae-942a-4999-8953-38c632aeb64a" /> -->
 
-<img width="1256" height="920" alt="Screen Recording 2026-07-31 at 00 47 53" src="https://github.com/user-attachments/assets/1aa64d75-ec11-4836-96d1-ff6d0b12f3d5" />
+<br>
+  <video src="https://github.com/user-attachments/assets/2f451615-d934-4aa5-ada4-3ac3d6899998" width="100%" controls></video>
+</div>
 
-**[🚀 DOWNLOAD THE LATEST DEMO RELEASE HERE](https://www.google.com/search?q=https://github.com/your-username/SMC_breach/releases)**
 
 ## 🚀 Quick start
 
