@@ -7,7 +7,7 @@ on:
 
 jobs:
   release:
-    runs-on: macos-latest # Targets macOS 15+ environments containing modern Xcode 26 toolchains
+    runs-on: xcode-27 # Targets native Apple Silicon environments pre-bundled with Xcode 27
     permissions:
       contents: write # Grants GitHub permission to create a release and upload files
     
@@ -15,9 +15,7 @@ jobs:
       - name: Checkout Code
         uses: actions/checkout@v4
 
-      - name: Select Xcode 26 for Liquid Glass Support
-        run: |
-          sudo xcode-select -s "/Applications/Xcode_26.0.app"
+      # Note: Manual xcode-select is removed as Xcode 27 is the native default on this runner.
 
       - name: Extract Version String
         id: get_version
