@@ -145,6 +145,11 @@ struct PowerMonitorView: View {
         }
         .padding(20)
         .frame(width: 340)
+        .glassEffect(
+                    .clear
+                    .interactive(),
+                    in: .rect(cornerRadius: 24, style: .continuous)
+                )
         .environment(\.colorScheme, .dark)
         .opacity(appeared ? 1 : 0)
         .scaleEffect(appeared ? 1 : 0.97)
@@ -211,7 +216,10 @@ struct PowerMonitorView: View {
                 Spacer() // Second spacer (balances the first to perfectly center horizontally)
             }
             .padding(16)
-            .glassBackground(cornerRadius: 16, variant: .clear)
+            .glassEffect(.clear, in: .rect(cornerRadius: 16))
+            
+            // Control total transparency by backing it with an ultra-faint dark dimming color
+            // Not needed for now - .background(.black.opacity(0.15))
             .environment(\.colorScheme, .dark)
             .opacity(appeared ? 1 : 0)
             .scaleEffect(appeared ? 1 : 0.97)
@@ -281,7 +289,7 @@ struct PowerMonitorView: View {
             .animation(.easeOut(duration: 0.35), value: powerMonitor.history)
         }
         .padding(16)
-        .glassBackground(cornerRadius: 16, variant: .clear)
+        .glassEffect(.clear, in: .rect(cornerRadius: 16))
     }
 
     // MARK: Bottom Actions
