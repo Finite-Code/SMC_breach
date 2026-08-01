@@ -1,5 +1,6 @@
 import SwiftUI
 import Foundation
+import CoreFoundation
 import Combine
 import IOKit
 import IOKit.ps
@@ -452,10 +453,12 @@ class PowerMonitor: ObservableObject {
     @Published var currentBarSamples: [Double] = [] // Current, fluctuating 5-min interval
     
     // Increase historyLimit to store 1 hour of data (4 samples/sec × 60 × 60 = 14,400 entries)
-    private let historyLimit = 14400
+    private let historyLimit = 80
     
     private var timer: Timer?
-
+    
+    private let ioReportMeter = IOReportPowerMeter()
+    
     // Buffers for polling
     private var batteryPowerBuffer: [Double] = []
     private var adapterWattsBuffer: [Int] = []
@@ -543,123 +546,43 @@ class PowerMonitor: ObservableObject {
         default: return "battery.0"
         }
     }
-
+    
     func start() {
         guard timer == nil else { return }
         
-        // ISTG - IOkit implementation SUCKSS, this updates too SLOW, with the next commit or pretty soon, I'm replacing this with the private IOReport framework :)
-                
-        // 1. Initial data fetch to populate the UI immediately
         pollAndBufferStats()
-            
-        // 2. Register for instant Kernel-level Power Notifications
-        // This fires exactly when the OS registers a power change (plugged in, unplugged, % drop)
+        
         let context = Unmanaged.passUnretained(self).toOpaque()
         let loopSource = IOPSNotificationCreateRunLoopSource({ context in
             guard let ctx = context else { return }
             let monitor = Unmanaged<PowerMonitor>.fromOpaque(ctx).takeUnretainedValue()
             DispatchQueue.main.async {
-                // Instantly update when the system broadcasts a hardware change
                 monitor.pollAndBufferStats()
             }
         }, context).takeRetainedValue()
         
         CFRunLoopAddSource(CFRunLoopGetMain(), loopSource, .commonModes)
+        
+        let newTimer = Timer.scheduledTimer(withTimeInterval: 1.5, repeats: true) { [weak self] _ in
+            guard let self = self else { return }
+            
+            self.pollAndBufferStats()
+            
+            DispatchQueue.global(qos: .userInitiated).async {
+                let trueSystemLoad = self.ioReportMeter.getOneSecondPowerSample()
                 
-        // 3. Maintain a slower 1-second timer strictly for the continuous Sparkline graph movement
-        timer = Timer.scheduledTimer(withTimeInterval: 1.0, repeats: true) { [weak self] _ in
-            self?.pollAndBufferStats()
-        }
-    }
-
-    @objc private func pollAndBufferStats() {
-            let service = IOServiceGetMatchingService(kIOMainPortDefault, IOServiceMatching("AppleSmartBattery"))
-            guard service != 0 else { return }
-            defer { IOObjectRelease(service) }
-
-            var prop: Unmanaged<CFMutableDictionary>?
-            guard IORegistryEntryCreateCFProperties(service, &prop, kCFAllocatorDefault, 0) == kIOReturnSuccess,
-                  let dict = prop?.takeUnretainedValue() as? [String: Any] else {
-                return
-            }
-
-            // --- CORE STATE ---
-            let isChargingVal = dict["IsCharging"] as? Bool ?? false
-            let isPluggedInVal = dict["ExternalConnected"] as? Bool ?? false
-            
-            // --- THE 0% BUG FIX: CASCADING FALLBACKS ---
-            // Dynamically probe the hardware for raw values, degrading gracefully to standard keys if on newer Apple Silicon
-            let rawCurrent = (dict["AppleRawCurrentCapacity"] as? NSNumber)?.doubleValue ??
-                             (dict["CurrentCapacity"] as? NSNumber)?.doubleValue ?? 0.0
-            
-            let rawMax = (dict["AppleRawMaxCapacity"] as? NSNumber)?.doubleValue ??
-                         (dict["NominalChargeCapacity"] as? NSNumber)?.doubleValue ??
-                         (dict["MaxCapacity"] as? NSNumber)?.doubleValue ?? 1.0
-            
-            let trueCapacityPercentage = Int((rawCurrent / rawMax) * 100.0)
-
-            // --- POWER MATH ---
-            let rawAmps = (dict["InstantAmperage"] as? NSNumber)?.doubleValue ?? 0.0
-            let volts = (dict["Voltage"] as? NSNumber)?.doubleValue ?? 0.0
-            let calcPower = (rawAmps * volts) / 1_000_000.0
-            
-            let batteryPowerVal: Double
-            if isChargingVal {
-                batteryPowerVal = abs(calcPower)
-            } else if rawAmps < 0 {
-                batteryPowerVal = -abs(calcPower)
-            } else {
-                batteryPowerVal = 0.0
-            }
-            
-            let adapterWattsVal: Int
-            if let rawAdapterDetails = dict["AppleRawAdapterDetails"] as? [String: Any] {
-                adapterWattsVal = (rawAdapterDetails["Watts"] as? NSNumber)?.intValue ?? 0
-            } else if let adapterDetails = dict["AdapterDetails"] as? [String: Any] {
-                adapterWattsVal = (adapterDetails["Watts"] as? NSNumber)?.intValue ?? 0
-            } else {
-                adapterWattsVal = 0
-            }
-            
-            var systemLoadVal: Double = 0.0
-            if let telemetry = dict["PowerTelemetryData"] as? [String: Any],
-               let sysLoad = (telemetry["SystemLoad"] as? NSNumber)?.doubleValue {
-                systemLoadVal = sysLoad / 1000.0
-            }
-
-            // --- BUFFER & UI UPDATE ---
-            DispatchQueue.main.async {
-                self.isChargingBuffer.append(isChargingVal)
-                self.isPluggedInBuffer.append(isPluggedInVal)
-                self.capacityBuffer.append(trueCapacityPercentage)
-                self.batteryPowerBuffer.append(batteryPowerVal)
-                self.adapterWattsBuffer.append(adapterWattsVal)
-                self.systemLoadBuffer.append(systemLoadVal)
-                self.pollCounter += 1
-
-                // We lowered the buffer requirement slightly so the UI feels snappier when responding to Kernel events
-                if self.pollCounter >= 2 {
-                    let avgIsCharging = self.isChargingBuffer.filter { $0 }.count >= 1
-                    let avgIsPluggedIn = self.isPluggedInBuffer.filter { $0 }.count >= 1
-                    let avgCapacity = Int(Double(self.capacityBuffer.reduce(0,+)) / Double(self.capacityBuffer.count))
-                    let avgBatteryPower = self.batteryPowerBuffer.reduce(0,+) / Double(self.batteryPowerBuffer.count)
-                    let avgAdapterWatts = Int(Double(self.adapterWattsBuffer.reduce(0,+)) / Double(self.adapterWattsBuffer.count))
-                    let avgSystemLoad = self.systemLoadBuffer.reduce(0,+) / Double(self.systemLoadBuffer.count)
-
-                    self.isCharging = avgIsCharging
-                    self.isPluggedIn = avgIsPluggedIn
-                    self.capacity = avgCapacity
-                    self.batteryPower = avgBatteryPower
-                    self.adapterWatts = avgAdapterWatts
-                    self.systemLoad = avgSystemLoad
+                DispatchQueue.main.async {
+                    // REMOVED: self.systemLoad = trueSystemLoad (This was causing the direct jump)
                     
-                    // Update graph arrays
-                    self.history.append(avgSystemLoad)
+                    // Instead, feed it directly into your existing safety buffer pipeline
+                    self.systemLoadBuffer.append(trueSystemLoad)
+                    
+                    self.history.append(trueSystemLoad)
                     if self.history.count > self.historyLimit {
                         self.history.removeFirst(self.history.count - self.historyLimit)
                     }
                     
-                    self.currentBarSamples.append(avgSystemLoad)
+                    self.currentBarSamples.append(trueSystemLoad)
                     if self.currentBarSamples.count >= 300 {
                         let finalizedAverage = self.currentBarSamples.reduce(0, +) / Double(self.currentBarSamples.count)
                         self.barHistory.append(finalizedAverage)
@@ -669,17 +592,276 @@ class PowerMonitor: ObservableObject {
                             self.barHistory.removeFirst(self.barHistory.count - 11)
                         }
                     }
-                    
-                    self.saveHistoryToDisk()
-
-                    self.isChargingBuffer.removeAll()
-                    self.isPluggedInBuffer.removeAll()
-                    self.capacityBuffer.removeAll()
-                    self.batteryPowerBuffer.removeAll()
-                    self.adapterWattsBuffer.removeAll()
-                    self.systemLoadBuffer.removeAll()
-                    self.pollCounter = 0
                 }
             }
         }
+        // Force the timer to run even while the Menu Bar dropdown is open
+        RunLoop.main.add(newTimer, forMode: .common)
+        self.timer = newTimer
+    }
+    
+    @objc private func pollAndBufferStats() {
+        let service = IOServiceGetMatchingService(kIOMainPortDefault, IOServiceMatching("AppleSmartBattery"))
+        guard service != 0 else { return }
+        defer { IOObjectRelease(service) }
+        
+        var prop: Unmanaged<CFMutableDictionary>?
+        guard IORegistryEntryCreateCFProperties(service, &prop, kCFAllocatorDefault, 0) == kIOReturnSuccess,
+              let dict = prop?.takeUnretainedValue() as? [String: Any] else {
+            return
+        }
+        
+        let isChargingVal = dict["IsCharging"] as? Bool ?? false
+        let isPluggedInVal = dict["ExternalConnected"] as? Bool ?? false
+        
+        let rawCurrent = (dict["AppleRawCurrentCapacity"] as? NSNumber)?.doubleValue ??
+        (dict["CurrentCapacity"] as? NSNumber)?.doubleValue ?? 0.0
+        
+        let rawMax = (dict["AppleRawMaxCapacity"] as? NSNumber)?.doubleValue ??
+        (dict["NominalChargeCapacity"] as? NSNumber)?.doubleValue ??
+        (dict["MaxCapacity"] as? NSNumber)?.doubleValue ?? 1.0
+        
+        let trueCapacityPercentage = Int((rawCurrent / rawMax) * 100.0)
+        
+        // 1. Safely decode the 64-bit unsigned integer back into a signed integer
+        let rawAmpsUInt = (dict["InstantAmperage"] as? NSNumber)?.uint64Value ?? 0
+        let rawAmps = Double(Int64(bitPattern: rawAmpsUInt))
+        
+        let volts = (dict["Voltage"] as? NSNumber)?.doubleValue ?? 0.0
+        
+        // Calculate battery watts (InstantAmperage is in mA, Voltage is in mV)
+        let calcPower = (rawAmps * volts) / 1_000_000.0
+        
+        let batteryPowerVal: Double
+        if isChargingVal {
+            batteryPowerVal = abs(calcPower) // Charging
+        } else if rawAmps < 0 {
+            batteryPowerVal = -abs(calcPower) // Discharging
+        } else {
+            batteryPowerVal = 0.0
+        }
+        
+        let adapterWattsVal: Int
+        if let rawAdapterDetails = dict["AppleRawAdapterDetails"] as? [String: Any] {
+            adapterWattsVal = (rawAdapterDetails["Watts"] as? NSNumber)?.intValue ?? 0
+        } else if let adapterDetails = dict["AdapterDetails"] as? [String: Any] {
+            adapterWattsVal = (adapterDetails["Watts"] as? NSNumber)?.intValue ?? 0
+        } else {
+            adapterWattsVal = 0
+        }
+        
+        // 2. Calculate true System Total using thermodynamic conservation
+        let trueSystemTotal: Double
+        if isPluggedInVal {
+            // Wall power minus whatever is being stored in the battery
+            trueSystemTotal = max(0, Double(adapterWattsVal) - (isChargingVal ? abs(batteryPowerVal) : 0))
+        } else {
+            // Unplugged: The system load is exactly what the battery is outputting
+            trueSystemTotal = abs(batteryPowerVal)
+        }
+        
+        // Buffer & Update
+        DispatchQueue.main.async {
+            self.isChargingBuffer.append(isChargingVal)
+            self.isPluggedInBuffer.append(isPluggedInVal)
+            self.capacityBuffer.append(trueCapacityPercentage)
+            self.batteryPowerBuffer.append(batteryPowerVal)
+            self.adapterWattsBuffer.append(adapterWattsVal)
+            self.systemLoadBuffer.append(trueSystemTotal)
+            
+            self.pollCounter += 1
+            
+            if self.pollCounter >= 1 { // Process instantly on the 1.5s tick
+                let avgIsCharging = self.isChargingBuffer.filter { $0 }.count >= 1
+                let avgIsPluggedIn = self.isPluggedInBuffer.filter { $0 }.count >= 1
+                let avgCapacity = Int(Double(self.capacityBuffer.reduce(0,+)) / Double(self.capacityBuffer.count))
+                let avgBatteryPower = self.batteryPowerBuffer.reduce(0,+) / Double(self.batteryPowerBuffer.count)
+                let avgAdapterWatts = Int(Double(self.adapterWattsBuffer.reduce(0,+)) / Double(self.adapterWattsBuffer.count))
+                
+                // 1. INCREASED FILTER: Completely ignore any reading under 1.0W.
+                // An active system will never draw less than 1W; anything lower is a sensor read error/sleep state.
+                // Using abs() just in case the sensor ever reports a negative value by mistake.
+                let validSystemLoads = self.systemLoadBuffer.filter { abs($0) >= 1.0 }
+                
+                let avgSystemLoad: Double
+                if validSystemLoads.isEmpty {
+                    // If the sensor gave us junk data (like 0.3W), ignore it and keep the previous good reading
+                    avgSystemLoad = self.systemLoad
+                } else {
+                    avgSystemLoad = validSystemLoads.reduce(0,+) / Double(validSystemLoads.count)
+                }
+                
+                self.isCharging = avgIsCharging
+                self.isPluggedIn = avgIsPluggedIn
+                self.capacity = avgCapacity
+                self.batteryPower = avgBatteryPower
+                self.adapterWatts = avgAdapterWatts
+                
+                // 2. Animate/Update threshold: Only update if the change is at least 0.1W
+                if abs(self.systemLoad - avgSystemLoad) >= 0.1 {
+                    self.systemLoad = avgSystemLoad
+                }
+                
+                self.saveHistoryToDisk()
+                
+                self.isChargingBuffer.removeAll()
+                self.isPluggedInBuffer.removeAll()
+                self.capacityBuffer.removeAll()
+                self.batteryPowerBuffer.removeAll()
+                self.adapterWattsBuffer.removeAll()
+                self.systemLoadBuffer.removeAll()
+                
+                self.pollCounter = 0
+            }
+        }
+    }
+}
+    
+    // Define the C-function signatures required for IOReport
+typealias IOReportCopyChannelsInGroup = @convention(c) (CFString, CFString?, UInt64, UInt64, UInt64) -> Unmanaged<CFDictionary>?
+typealias IOReportCreateSubscription = @convention(c) (CFTypeRef?, CFMutableDictionary, UnsafeMutablePointer<CFMutableDictionary?>?, UInt64, CFTypeRef?) -> Unmanaged<CFTypeRef>?
+typealias IOReportCreateSamples = @convention(c) (CFTypeRef, CFMutableDictionary, CFTypeRef?) -> Unmanaged<CFDictionary>?
+typealias IOReportCreateSamplesDelta = @convention(c) (CFDictionary, CFDictionary, CFTypeRef?) -> Unmanaged<CFDictionary>?
+typealias IOReportSimpleGetIntegerValue = @convention(c) (CFDictionary, Int32) -> Int64
+// New function pointer required to correctly decode opaque hardware units
+typealias IOReportChannelGetUnitLabel = @convention(c) (CFDictionary) -> UnsafeRawPointer?
+    
+class IOReportPowerMeter {
+    private var libHandle: UnsafeMutableRawPointer?
+    
+    // Function Pointers
+    private var copyChannelsInGroup: IOReportCopyChannelsInGroup?
+    private var createSubscription: IOReportCreateSubscription?
+    private var createSamples: IOReportCreateSamples?
+    private var createSamplesDelta: IOReportCreateSamplesDelta?
+    private var simpleGetIntegerValue: IOReportSimpleGetIntegerValue?
+    private var getUnitLabel: IOReportChannelGetUnitLabel?
+    
+    // Cache timebase info to avoid repeated kernel syscalls
+    private var timebaseInfo = mach_timebase_info_data_t()
+    
+    init() {
+        // Initialize the Mach timebase for nanosecond precision calculations
+        mach_timebase_info(&timebaseInfo)
+        
+        libHandle = dlopen("/usr/lib/libIOReport.dylib", RTLD_NOW)
+        guard let handle = libHandle else {
+            print("CRITICAL: Failed to load libIOReport.dylib. Ensure macOS compatibility.")
+            return
+        }
+        
+        if let sym = dlsym(handle, "IOReportCopyChannelsInGroup") {
+            copyChannelsInGroup = unsafeBitCast(sym, to: IOReportCopyChannelsInGroup.self)
+        }
+        if let sym = dlsym(handle, "IOReportCreateSubscription") {
+            createSubscription = unsafeBitCast(sym, to: IOReportCreateSubscription.self)
+        }
+        if let sym = dlsym(handle, "IOReportCreateSamples") {
+            createSamples = unsafeBitCast(sym, to: IOReportCreateSamples.self)
+        }
+        if let sym = dlsym(handle, "IOReportCreateSamplesDelta") {
+            createSamplesDelta = unsafeBitCast(sym, to: IOReportCreateSamplesDelta.self)
+        }
+        if let sym = dlsym(handle, "IOReportSimpleGetIntegerValue") {
+            simpleGetIntegerValue = unsafeBitCast(sym, to: IOReportSimpleGetIntegerValue.self)
+        }
+        // Bind the previously missing unit extraction function
+        if let sym = dlsym(handle, "IOReportChannelGetUnitLabel") {
+            getUnitLabel = unsafeBitCast(sym, to: IOReportChannelGetUnitLabel.self)
+        }
+    }
+    
+    deinit {
+        if let handle = libHandle { dlclose(handle) }
+    }
+    
+    func getOneSecondPowerSample() -> Double {
+        guard let copyChannels = copyChannelsInGroup,
+              let createSub = createSubscription,
+              let createSamp = createSamples,
+              let createDelta = createSamplesDelta,
+              let getIntValue = simpleGetIntegerValue,
+              let getUnit = getUnitLabel else {
+            return 0.0
+        }
+        
+        // 1. Retrieve the immutable energy group dictionary from the kernel
+        guard let channelsUnmanaged = copyChannels("Energy Model" as CFString, nil, 0, 0, 0) else {
+            return 0.0
+        }
+        // takeRetainedValue safely transfers ownership to Swift's ARC, preventing leaks
+        let channels = channelsUnmanaged.takeRetainedValue()
+        
+        // 2. IOReport requires a MUTABLE dictionary for the subscription protocol
+        guard let mutableChannels = CFDictionaryCreateMutableCopy(nil, 0, channels) else {
+            return 0.0
+        }
+        
+        // 3. Create the subscription object (Now utilizing Unmanaged to prevent IPC leaks)
+        var subbedChannels: CFMutableDictionary? = nil
+        guard let subscriptionUnmanaged = createSub(nil, mutableChannels, &subbedChannels, 0, nil) else {
+            // If this fails, the App Sandbox is likely blocking Mach-lookup to IOReportUserClient
+            return 0.0
+        }
+        let sub = subscriptionUnmanaged.takeRetainedValue()
+        guard let subbed = subbedChannels else { return 0.0 }
+        
+        // 4. Take Baseline Sample and record exact Mach Time
+        let startTime = mach_absolute_time()
+        guard let sampleAUnmanaged = createSamp(sub, subbed, nil) else { return 0.0 }
+        let sampleA = sampleAUnmanaged.takeRetainedValue()
+        
+        // 5. Sleep for approximately one second (Thread dispatch latency is mitigated by precise math below)
+        Thread.sleep(forTimeInterval: 1.0)
+        
+        // 6. Take Second Sample and record exact Mach Time
+        let endTime = mach_absolute_time()
+        guard let sampleBUnmanaged = createSamp(sub, subbed, nil) else { return 0.0 }
+        let sampleB = sampleBUnmanaged.takeRetainedValue()
+        
+        // 7. Calculate highly precise time delta in seconds using the Mach timebase
+        let elapsedNanos = (endTime - startTime) * UInt64(timebaseInfo.numer) / UInt64(timebaseInfo.denom)
+        let exactTimeSeconds = Double(elapsedNanos) / 1_000_000_000.0
+        guard exactTimeSeconds > 0 else { return 0.0 }
+        
+        // 8. Calculate the Delta array between the two samples
+        guard let deltaUnmanaged = createDelta(sampleA, sampleB, nil) else { return 0.0 }
+        let delta = deltaUnmanaged.takeRetainedValue()
+        
+        var totalWatts = 0.0
+        
+        // 9. Iterate over the delta dictionaries using Foundation reference types to prevent immutable bridging
+                if let deltaDict = delta as? NSDictionary,
+                   let reportChannels = deltaDict["IOReportChannels"] as? NSArray {
+                    
+                    // Cast strictly to NSMutableDictionary so the C-API can cache the unit label without crashing
+                    for case let channelDict as NSMutableDictionary in reportChannels {
+                        
+                        let cfChannel = channelDict as CFDictionary
+                        
+                        // 10. Dynamically extract the unit label using the private C-API
+                        guard let unitPtr = getUnit(cfChannel) else { continue }
+                        let unit = Unmanaged<CFString>.fromOpaque(unitPtr).takeUnretainedValue() as String
+                        
+                        // 11. Decode the opaque C-struct into an integer
+                        let rawEnergyInt = getIntValue(cfChannel, 0)
+                        let rawEnergy = Double(rawEnergyInt)
+                        
+                        guard rawEnergy > 0 else { continue }
+                        
+                        var joules = 0.0
+                        switch unit {
+                        case "mJ": joules = rawEnergy / 1_000.0
+                        case "uJ": joules = rawEnergy / 1_000_000.0
+                        case "nJ": joules = rawEnergy / 1_000_000_000.0
+                        default: continue
+                        }
+                        
+                        // 12. Apply precise thermodynamic equation: Power = Energy / Time
+                        totalWatts += (joules / exactTimeSeconds)
+                    }
+                }
+        
+        return totalWatts
+    }
 }
